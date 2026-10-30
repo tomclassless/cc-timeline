@@ -1,0 +1,12 @@
+{
+  "name": "cc-timeline",
+  "description": "cc-timeline: time attribution for Claude Code sessions",
+  "owner": { "name": "tomclassless" },
+  "plugins": [
+    {
+      "name": "cc-timeline",
+      "source": "./",
+      "description": "Generate a cc-timeline HTML report of where your Claude Code time went."
+    }
+  ]
+}
