@@ -5,7 +5,7 @@ from collections import defaultdict
 from .bash import bash_phase
 from .transcript import load_entries, match_agent, parse_ts
 
-__all__ = ["match_agent", "phase_of", "analyze_agent", "agent_files", "phase_group", "PHASE_GROUPS"]
+__all__ = ["match_agent", "phase_of", "scan_agent", "analyze_agent", "agent_files", "phase_group", "PHASE_GROUPS"]
 
 READ_TOOLS = {"Read", "Grep", "Glob", "LS", "NotebookRead", "WebFetch", "WebSearch"}
 EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
@@ -28,13 +28,15 @@ def phase_group(phase):
     return phase if phase in PHASE_GROUPS else "other"
 
 
-def analyze_agent(path, idle_cap):
+def scan_agent(path, idle_cap):
     """Subagent transcript: model time split by the next block (think/code/gen), tools by phase.
 
-    Returns (phases, start_datetime_or_None).
+    Returns {"phases": {phase: sec}, "start": datetime|None, "end": datetime|None,
+    "segments": [(start, end, phase)]}. Gaps over idle_cap are dropped, not segments.
     """
     entries = load_entries(path, keep_sidechain=True)
     phases = defaultdict(float)
+    segments = []
     pending = {}
     prev = None
     for e in entries:
@@ -66,8 +68,17 @@ def analyze_agent(path, idle_cap):
             gap = max((ts - prev).total_seconds(), 0)
             if gap <= idle_cap:
                 phases[cat] += gap
+                segments.append((prev, ts, cat))
         prev = ts
-    return phases, (parse_ts(entries[0]["timestamp"]) if entries else None)
+    return {"phases": phases, "segments": segments,
+            "start": parse_ts(entries[0]["timestamp"]) if entries else None,
+            "end": parse_ts(entries[-1]["timestamp"]) if entries else None}
+
+
+def analyze_agent(path, idle_cap):
+    """Returns (phases, start_datetime_or_None); see scan_agent for the full result."""
+    r = scan_agent(path, idle_cap)
+    return r["phases"], r["start"]
 
 
 def agent_files(path, agents):

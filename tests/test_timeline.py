@@ -1,3 +1,4 @@
+import csv
 import json
 import os
 import re
@@ -6,6 +7,7 @@ import pytest
 from helpers import Session
 
 from cc_timeline import cli
+from cc_timeline import report
 from cc_timeline.agents import agent_files, analyze_agent, phase_group
 from cc_timeline.bash import bash_phase
 from cc_timeline.i18n import item_name, labels
@@ -314,14 +316,18 @@ REDACT_SECRETS = ("secretproj", "deadbeef", "secretagent", "secretsrv")
 
 def redact_outputs(root, tmp_path, capsys):
     out = tmp_path / "r.html"
+    csv_path = tmp_path / "r.csv"
     argsets = [[], ["--json"], ["--agents"], ["--session", "deadbeef", "--trace", "5"],
-               ["--html", str(out)]]
+               ["--html", str(out)], ["--by", "project"], ["--csv", str(csv_path)],
+               ["--csv", str(csv_path), "--by", "day"]]
     for extra in argsets:
         capsys.readouterr()
         cli.main(["--root", str(root), *ALL, "--redact", *extra])
         text = capsys.readouterr().out
-        if out.exists():
-            text += out.read_text(encoding="utf-8")
+        for f in (out, csv_path):
+            if f.exists():
+                text += f.read_text(encoding="utf-8")
+                f.unlink()
         yield extra, text
 
 
@@ -388,3 +394,86 @@ def test_mtime_is_only_a_prescreen(tmp_path):
 def test_bad_date_is_rejected(tmp_path):
     with pytest.raises(SystemExit):
         cli.main(["--root", str(tmp_path), "--since", "01/02/2026"])
+
+
+# ── grouping and export ──
+
+DAY = 86400
+NOON = 12 * 3600
+
+
+def group_root(tmp_path):
+    def sess(t, tool_sec, cwd, sid, project):
+        Session(cwd=cwd).user(t).assistant(t + 10).tool_use(t + 12, "t1", "Read") \
+            .tool_result(t + 12 + tool_sec, "t1").user(t + 18 + tool_sec) \
+            .write(tmp_path, project=project, sid=sid)
+    sess(NOON, 8, "/x/alpha", "aaaa0001-x", "-x-alpha")                 # 2026-01-01, W01
+    sess(DAY + NOON, 18, "/x/beta", "bbbb0002-x", "-x-beta")           # 2026-01-02, W01
+    sess(4 * DAY + NOON, 8, "/x/alpha", "cccc0003-x", "-x-alpha")      # 2026-01-05, W02
+    return tmp_path
+
+
+def rows_for(root, by):
+    results = [analyze(p, CAP) for p in sorted(root.glob("*/*.jsonl"))]
+    return {r["key"]: r for r in report.group_rows(results, by)}
+
+
+def test_group_rows_day_week_project(tmp_path):
+    root = group_root(tmp_path)
+    day = rows_for(root, "day")
+    assert list(day) == ["2026-01-01", "2026-01-02", "2026-01-05"]
+    assert (day["2026-01-02"]["n"], day["2026-01-02"]["model"], day["2026-01-02"]["tool"],
+            day["2026-01-02"]["user"], day["2026-01-02"]["active"]) == (1, 12, 18, 6, 30)
+    week = rows_for(root, "week")
+    assert list(week) == ["2026-W01", "2026-W02"]
+    w1 = week["2026-W01"]
+    assert (w1["n"], w1["model"], w1["tool"], w1["bg"], w1["user"], w1["idle"], w1["active"]) == \
+        (2, 24, 26, 0, 12, 0, 50)
+    proj = rows_for(root, "project")
+    assert (proj["alpha"]["n"], proj["alpha"]["model"], proj["alpha"]["tool"], proj["alpha"]["user"]) == \
+        (2, 24, 16, 12)
+    assert list(proj)[0] == "alpha"  # alpha 40s active > beta 30s
+    assert len(rows_for(root, "session")) == 3
+
+
+def test_by_table_and_csv(tmp_path, capsys):
+    root = group_root(tmp_path / "t")
+    base = ["--root", str(root), *ALL]
+    cli.main([*base, "--by", "week"])
+    out = capsys.readouterr().out
+    lines = out.strip().splitlines()
+    assert lines[1].startswith("2026-W01") and lines[2].startswith("2026-W02")
+    assert lines[3].startswith("Total")
+    assert "50s" in lines[1] and "26s" in lines[1]
+    # sessions CSV
+    path = tmp_path / "a.csv"
+    cli.main([*base, "--csv", str(path)])
+    capsys.readouterr()
+    rows = list(csv.DictReader(path.open(encoding="utf-8")))
+    assert list(rows[0]) == ["start", "project", "session", "wall", "model", "tool", "bg", "user",
+                             "idle", "errors", "top"]
+    assert [(r["session"], r["project"]) for r in rows] == \
+        [("aaaa0001", "alpha"), ("bbbb0002", "beta"), ("cccc0003", "alpha")]
+    beta = rows[1]
+    assert (float(beta["wall"]), float(beta["model"]), float(beta["tool"]), float(beta["user"]),
+            float(beta["bg"]), float(beta["idle"]), int(beta["errors"])) == (36, 12, 18, 6, 0, 0, 0)
+    assert beta["top"] == "Read"
+    # grouped CSV
+    cli.main([*base, "--csv", str(path), "--by", "week"])
+    capsys.readouterr()
+    rows = list(csv.DictReader(path.open(encoding="utf-8")))
+    assert list(rows[0]) == ["group", "sessions", "active", "model", "tool", "bg", "user", "idle"]
+    assert [(r["group"], r["sessions"], float(r["active"]), float(r["tool"])) for r in rows] == \
+        [("2026-W01", "2", 50, 26), ("2026-W02", "1", 20, 8)]
+
+
+def test_agent_scan_is_cached_per_session(tmp_path, monkeypatch):
+    main = Session().user(0).assistant(1).write(tmp_path)
+    Session(sidechain=True).user(0).assistant(9).write_agent(main, "a1", "explorer")
+    calls = []
+    real = report.scan_agent
+    monkeypatch.setattr(report, "scan_agent", lambda *a: calls.append(a) or real(*a))
+    results = [analyze(main, CAP)]
+    report.build_report(results, 7, None, "en", CAP)
+    report.print_agents(results, "en", CAP)
+    assert len(calls) == 1

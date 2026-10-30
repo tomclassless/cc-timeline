@@ -1,4 +1,5 @@
 """Build report data and render it as CLI text, JSON or HTML."""
+import csv
 import hashlib
 import json
 import re
@@ -7,12 +8,13 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from .agents import PHASE_GROUPS, agent_files, analyze_agent, phase_group
+from .agents import PHASE_GROUPS, agent_files, phase_group, scan_agent
 from .i18n import agent_name, item_name, labels
 from .transcript import TRACE_VALUE_KEYS, parse_ts, shape, trace_value
 
 TEMPLATE = Path(__file__).parent / "templates" / "report.html"
 BUCKET_KEYS = ("model", "tool", "bg", "user")
+ALL_KEYS = (*BUCKET_KEYS, "idle")
 BUILTIN_AGENTS = {"general-purpose", "Explore", "Plan", "statusline-setup", "claude-code-guide"}
 _AGENT_LABEL = re.compile(r"(Agent|Task)\((.*)\)", re.S)
 _MCP_LABEL = re.compile(r"mcp:([^…]*)…(.*)", re.S)
@@ -89,9 +91,103 @@ def redact(results):
     return results
 
 
-def agent_runs(r):
-    scrub = r.get("scrub") or (lambda label: label)
-    return [(scrub(label), f) for label, f in agent_files(r["path"], r["agent_corpus"])]
+def agent_runs(r, idle_cap=None):
+    """Subagent runs of a session as dicts (label, path, phases, start, end, segments).
+
+    Parsed once per session and cached in the result, so --html and --agents share the work.
+    """
+    if "agent_runs" not in r:
+        scrub = r.get("scrub") or (lambda label: label)
+        runs = []
+        for label, f in agent_files(r["path"], r["agent_corpus"]):
+            runs.append({"label": scrub(label), "path": f, **scan_agent(f, idle_cap)})
+        r["agent_runs"] = runs
+    return r["agent_runs"]
+
+
+def aggregate(results):
+    """Totals shared by the CLI summary and the report: buckets, tool seconds/calls, errors."""
+    totals = defaultdict(float)
+    tools = defaultdict(float)
+    calls = defaultdict(int)
+    for r in results:
+        for k in ALL_KEYS:
+            totals[k] += r["buckets"][k]
+        for k, v in r["tools"].items():
+            tools[k] += v
+            calls[k] += r["tool_calls"][k]
+    return {"n": len(results), "totals": totals, "tools": tools, "calls": calls,
+            "api_errors": sum(r["api_errors"] for r in results)}
+
+
+def session_rows(results, L):
+    """One dict per session; shared by the HTML sessions table and the CSV export."""
+    rows = []
+    for r in results:
+        b = r["buckets"]
+        top = max(r["tools"].items(), key=lambda kv: kv[1], default=("", 0))
+        rows.append({"start": f"{r['start'].astimezone():%Y-%m-%d %H:%M}", "project": r["project"],
+                     "id": r["id"][:8], "wall": r["wall"], "idle": b["idle"],
+                     **{k: b[k] for k in BUCKET_KEYS}, "top": item_name(L, top[0]),
+                     "errors": r["api_errors"]})
+    return rows
+
+
+def group_key(r, by):
+    local = r["start"].astimezone()
+    if by == "day":
+        return f"{local:%Y-%m-%d}"
+    if by == "week":
+        year, week, _ = local.isocalendar()
+        return f"{year}-W{week:02d}"
+    if by == "project":
+        return r["project"]
+    return r["id"][:8]
+
+
+def group_rows(results, by):
+    """Summary rows per day / ISO week / project / session; busy shares use model+tool+bg+user."""
+    groups = {}
+    for r in sorted(results, key=lambda r: r["start"]):
+        groups.setdefault(group_key(r, by), []).append(r)
+    rows = []
+    for key, rs in groups.items():
+        t = aggregate(rs)["totals"]
+        rows.append({"key": key, "n": len(rs), "active": t["model"] + t["tool"] + t["bg"],
+                     **{k: t[k] for k in ALL_KEYS}})
+    if by == "project":
+        rows.sort(key=lambda row: -row["active"])
+    return rows
+
+
+def num(v):
+    return int(v) if v == int(v) else round(v, 3)
+
+
+def write_csv(path, header, rows):
+    path = Path(path).expanduser()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(header)
+        for row in rows:
+            w.writerow([num(v) if isinstance(v, float) else v for v in row])
+    return path
+
+
+SESSION_CSV = ("start", "project", "id", "wall", *BUCKET_KEYS, "idle", "errors", "top")
+GROUP_CSV = ("key", "n", "active", *ALL_KEYS)
+
+
+def export_csv(path, results, L, by=None):
+    """Session rows, or one row per group when `by` is given. Seconds are numbers."""
+    if by:
+        rows = group_rows(results, by)
+        return write_csv(path, ("group", "sessions", "active", *ALL_KEYS),
+                         [[row[k] for k in GROUP_CSV] for row in rows])
+    rows = session_rows(results, L)
+    return write_csv(path, ("start", "project", "session", "wall", *BUCKET_KEYS, "idle", "errors", "top"),
+                     [[row[k] for k in SESSION_CSV] for row in rows])
 
 
 def period_text(L, days, since, until):
@@ -108,34 +204,22 @@ def build_report(results, days, project, lang, idle_cap, redacted=False, since=N
     """Report data; only times, names and ids, never conversation content."""
     L = labels(lang)
     day = lambda ts: f"{ts.astimezone():%Y-%m-%d}"
-    totals = defaultdict(float)
+    agg = aggregate(results)
+    totals, tool_secs, tool_calls = agg["totals"], agg["tools"], agg["calls"]
     daily = defaultdict(lambda: defaultdict(float))
-    items = defaultdict(lambda: {"n": 0, "sec": 0.0, "kind": "tool"})
-    sessions = []
     for r in results:
-        b = r["buckets"]
-        for k in (*BUCKET_KEYS, "idle"):
-            totals[k] += b[k]
         for k in BUCKET_KEYS:
-            daily[day(r["start"])][k] += b[k]
-        for key, sec in r["tools"].items():
-            it = items[key]
-            it["n"] += r["tool_calls"][key]
-            it["sec"] += sec
-            if isinstance(key, tuple):
-                it["kind"] = "bg"
-        top = max(r["tools"].items(), key=lambda kv: kv[1], default=("", 0))
-        sessions.append({"start": f"{r['start'].astimezone():%Y-%m-%d %H:%M}", "project": r["project"],
-                         "id": r["id"][:8], "wall": r["wall"], "idle": b["idle"],
-                         **{k: b[k] for k in BUCKET_KEYS}, "top": item_name(L, top[0]),
-                         "errors": r["api_errors"]})
+            daily[day(r["start"])][k] += r["buckets"][k]
+    items = {key: {"n": tool_calls[key], "sec": sec, "kind": "bg" if isinstance(key, tuple) else "tool"}
+             for key, sec in tool_secs.items()}
+    sessions = session_rows(results, L)
 
     agents = defaultdict(lambda: {"runs": 0, "phases": defaultdict(float)})
     agent_daily = defaultdict(lambda: {"runs": 0, "total": 0.0, "think": 0.0})
     for r in results:
-        for label, f in agent_runs(r):
-            label = agent_name(L, label)
-            phases, start = analyze_agent(f, idle_cap)
+        for run in agent_runs(r, idle_cap):
+            label = agent_name(L, run["label"])
+            phases, start = run["phases"], run["start"]
             total = sum(phases.values())
             if not total:
                 continue
@@ -160,7 +244,7 @@ def build_report(results, days, project, lang, idle_cap, redacted=False, since=N
         "days": days, "since": since and str(since), "until": until and str(until),
         "period": period_text(L, days, since, until), "project": shown,
         "sessionCount": len(results),
-        "apiErrors": sum(r["api_errors"] for r in results),
+        "apiErrors": agg["api_errors"],
         "totals": dict(totals),
         "daily": [{"date": d, **v} for d, v in sorted(daily.items())],
         "items": [{"name": item_name(L, k), **v} for k, v in ranked],
@@ -198,13 +282,9 @@ def print_summary(results, lang, top):
     print(f"{L['col_start']:<12} {L['col_project']:<22} {L['col_session']:<9} {L['col_wall']:>7} "
           f"{L['col_active']:>7} {L['col_model']:>5} {L['col_tool']:>5} {L['col_bg']:>5} "
           f"{L['col_user']:>5} {L['col_idle']:>7}  {L['col_top']}")
-    total = defaultdict(float)
-    all_tools = defaultdict(float)
-    all_calls = defaultdict(int)
-    api_errors = 0
     for r in results:
         b = r["buckets"]
-        active = b["model"] + b["tool"] + b["bg"] + b["other"]
+        active = b["model"] + b["tool"] + b["bg"]
         busy = active + b["user"]
         key, sec = max(r["tools"].items(), key=lambda kv: kv[1], default=("", 0))
         name = item_name(L, key)
@@ -212,20 +292,32 @@ def print_summary(results, lang, top):
               f"{fmt(r['wall']):>7} {fmt(active):>7} {pct(b['model'], busy)} {pct(b['tool'], busy)} "
               f"{pct(b['bg'], busy)} {pct(b['user'], busy)} {fmt(b['idle']):>7}  "
               f"{name} {fmt(sec) if name else ''}")
-        for k, v in b.items():
-            total[k] += v
-        for k, v in r["tools"].items():
-            all_tools[k] += v
-            all_calls[k] += r["tool_calls"][k]
-        api_errors += r["api_errors"]
 
-    busy = sum(total[k] for k in ("model", "tool", "bg", "user", "other"))
+    agg = aggregate(results)
+    total = agg["totals"]
+    busy = sum(total[k] for k in BUCKET_KEYS)
     parts = [f"{L['sum_' + k]} {fmt(total[k])} ({pct(total[k], busy).strip()})"
              for k in BUCKET_KEYS]
     print("\n" + L["sum_line"].format(n=len(results), busy=fmt(busy)) + L["sep"].join(parts))
-    if api_errors:
-        print(L["api_errors_line"].format(n=api_errors))
-    print_tools(L, all_tools, all_calls, total["tool"] + total["bg"], top)
+    if agg["api_errors"]:
+        print(L["api_errors_line"].format(n=agg["api_errors"]))
+    print_tools(L, agg["tools"], agg["calls"], total["tool"] + total["bg"], top)
+
+
+def print_groups(results, by, lang):
+    """Summary table, one row per day / week / project / session."""
+    L = labels(lang)
+    cell = lambda v, busy: f"{pct(v, busy).strip():>4} {fmt(v):>7}"
+    print(f"{L['by_' + by]:<22} {L['col_n']:>4} {L['col_active']:>7} {L['col_model']:>12} "
+          f"{L['col_tool']:>12} {L['col_bg']:>12} {L['col_user']:>12} {L['col_idle']:>7}")
+    rows = group_rows(results, by)
+    t = aggregate(results)["totals"]
+    rows.append({"key": L["total"], "n": len(results), "active": t["model"] + t["tool"] + t["bg"],
+                 **{k: t[k] for k in ALL_KEYS}})
+    for row in rows:
+        busy = sum(row[k] for k in BUCKET_KEYS)
+        print(f"{row['key'][:22]:<22} {row['n']:>4} {fmt(row['active']):>7} "
+              + " ".join(cell(row[k], busy) for k in BUCKET_KEYS) + f" {fmt(row['idle']):>7}")
 
 
 def print_tools(L, tools, calls, tool_total, top):
@@ -240,9 +332,9 @@ def print_agents(results, lang, idle_cap):
     by_type = defaultdict(lambda: defaultdict(float))
     runs = defaultdict(int)
     for r in results:
-        for label, f in agent_runs(r):
-            label = agent_name(L, label)
-            for k, v in analyze_agent(f, idle_cap)[0].items():
+        for run in agent_runs(r, idle_cap):
+            label = agent_name(L, run["label"])
+            for k, v in run["phases"].items():
                 by_type[label][k] += v
             runs[label] += 1
     if not by_type:
@@ -262,7 +354,7 @@ def print_detail(r, lang, top):
     print(L["d_head"].format(id=r["id"], project=r["project"],
                              start=f"{r['start'].astimezone():%Y-%m-%d %H:%M}"))
     print(L["d_totals"].format(wall=fmt(r["wall"]), prompts=r["prompts"], errors=r["api_errors"]))
-    for k in ("model", "tool", "bg", "user", "idle"):
+    for k in ALL_KEYS:
         print(f"  {L['d_' + k]:<12} {fmt(b[k]):>8}  {pct(b[k], r['wall'])}")
     print_tools(L, r["tools"], r["tool_calls"], b["tool"] + b["bg"], top)
     print("\n" + L["d_slowest"].format(n=top))

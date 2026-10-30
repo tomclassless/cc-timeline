@@ -6,8 +6,8 @@ from pathlib import Path
 
 from . import __version__
 from .i18n import labels, resolve_lang
-from .report import (build_report, print_agents, print_detail, print_summary, print_trace,
-                     redact, to_json, write_html)
+from .report import (build_report, export_csv, print_agents, print_detail, print_groups, print_summary,
+                     print_trace, redact, to_json, write_html)
 from .transcript import analyze, default_root, find_sessions
 
 DEFAULT_REPORT = Path("cc-timeline-report.html")
@@ -65,6 +65,10 @@ def build_parser():
                     help=f"write a visual HTML report (default {DEFAULT_REPORT})")
     ap.add_argument("--open", action="store_true", help="with --html: open the report in a browser")
     ap.add_argument("--json", action="store_true", help="print report data as JSON to stdout")
+    ap.add_argument("--by", choices=["day", "week", "project", "session"],
+                    help="print one summary row per day / ISO week / project / session")
+    ap.add_argument("--csv", type=Path, metavar="PATH",
+                    help="write sessions (or the --by summary rows) as CSV; seconds are numbers")
     ap.add_argument("--redact", action="store_true",
                     help="replace project names, session ids, custom agent types and MCP server "
                          "names (safe to share screenshots)")
@@ -95,6 +99,10 @@ def main(argv=None):
     if args.redact:
         redact(results)
 
+    if args.csv:
+        out = export_csv(args.csv, results, L, args.by)
+        print(L["csv_written"].format(path=out), file=sys.stderr if args.json else sys.stdout)
+
     if args.html or args.json:
         data = build_report(results, days, args.project, lang, idle_cap, args.redact,
                             args.since, args.until)
@@ -115,6 +123,8 @@ def main(argv=None):
         for r in results:
             print_detail(r, lang, args.top)
             print_trace(r, lang, args.trace)
+    elif args.by:
+        print_groups(results, args.by, lang)
     else:
         print_summary(results, lang, args.top)
     return 0
