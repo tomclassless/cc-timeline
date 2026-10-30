@@ -20,7 +20,12 @@ ORIGIN_KIND = {
 # The transcript format is undocumented. These are the values this tool was written against;
 # anything else is reported (see report.format_summary) so format changes are noticed early.
 KNOWN_TYPES = {"user", "assistant", "system", "attachment", "queue-operation", "api-request",
-               "api-request-shape", "file-history-snapshot", "progress", "summary"}
+               "api-request-shape", "file-history-snapshot", "progress", "summary",
+               # Session metadata seen in newer Claude Code builds (desktop app included). They carry
+               # no conversation turn, so they never split or attribute time.
+               "agent-name", "api-request-blob", "artifact-autoreact-ledger", "artifact-comment-monitor",
+               "atis-latch", "bridge-session", "cost-state", "custom-title", "file-history-delta",
+               "frame-link", "last-prompt", "mode", "permission-mode", "relocated", "worktree-state"}
 KNOWN_ORIGINS = {"human", "peer", "task_notification", "task-notification", "sdk"}
 
 _FRAC_RE = re.compile(r"\.(\d+)")

@@ -684,3 +684,12 @@ def test_html_footer_credit_link(tmp_path, capsys, lang, text):
     data = json.loads(re.search(r'<script id="data" type="application/json">(.*?)</script>',
                                 html, re.S).group(1).replace("<\\/", "</"))
     assert data["labels"]["credit"] == text
+
+
+def test_metadata_types_do_not_warn(tmp_path, capsys):
+    s = known_session()
+    for i, t in enumerate(["custom-title", "last-prompt", "atis-latch", "api-request-blob", "worktree-state"]):
+        s.raw(8 + i, t)
+    s.write(tmp_path)
+    cli.main(["--root", str(tmp_path), *ALL])
+    assert "Warning" not in capsys.readouterr().err
