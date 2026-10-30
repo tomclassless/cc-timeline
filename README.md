@@ -34,15 +34,15 @@ Where did the time go in your Claude Code sessions? `cc-timeline` reads the tran
 Python 3.9+, standard library only.
 
 ```bash
-# run without installing (once the PyPI release is out)
+# run without installing
 uvx cc-timeline
 
-# or from the git repository (works today)
-uvx --from git+https://github.com/tomclassless/cc-timeline cc-timeline
+# or install as a tool
+uv tool install cc-timeline
+pip install cc-timeline
 
-# install as a tool
-uv tool install git+https://github.com/tomclassless/cc-timeline   # or: uv tool install cc-timeline
-pip install git+https://github.com/tomclassless/cc-timeline       # or: pip install cc-timeline
+# latest unreleased version from the git repository
+uvx --from git+https://github.com/tomclassless/cc-timeline cc-timeline
 ```
 
 `python -m cc_timeline` works too.
@@ -57,7 +57,7 @@ This repository is also a Claude Code plugin marketplace:
 /cc-timeline:timeline --days 14
 ```
 
-The `timeline` skill runs `cc-timeline --html --open` with your arguments and summarizes the result. It currently runs from the git repository via `uvx --from git+https://github.com/tomclassless/cc-timeline`; once the package is on PyPI this can be switched to plain `uvx cc-timeline`.
+The `timeline` skill runs `cc-timeline --html --open` with your arguments and summarizes the result. It runs the published package with `uvx cc-timeline`.
 
 ## Usage
 
@@ -130,7 +130,7 @@ Claude Code's transcript format is undocumented (`turnOrigin`, `queue-operation`
 `cc-timeline mcp` runs an MCP server (stdio, standard library only) so Claude can query its own time allocation. Add it to Claude Code:
 
 ```bash
-claude mcp add cc-timeline -- uvx --from git+https://github.com/tomclassless/cc-timeline cc-timeline mcp
+claude mcp add -s user cc-timeline -- uvx cc-timeline mcp
 ```
 
 (Once the package is on PyPI this becomes `claude mcp add cc-timeline -- uvx cc-timeline mcp`.) Installing the plugin registers the same server automatically. For Claude Desktop, add this to `claude_desktop_config.json`:
@@ -140,7 +140,7 @@ claude mcp add cc-timeline -- uvx --from git+https://github.com/tomclassless/cc-
   "mcpServers": {
     "cc-timeline": {
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/tomclassless/cc-timeline", "cc-timeline", "mcp"]
+      "args": ["cc-timeline", "mcp"]
     }
   }
 }

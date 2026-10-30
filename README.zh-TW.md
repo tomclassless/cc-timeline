@@ -34,15 +34,15 @@
 需要 Python 3.9 以上，只用標準函式庫。
 
 ```bash
-# 不安裝，直接跑（PyPI 發佈後可用）
+# 不安裝，直接跑
 uvx cc-timeline
 
-# 或從 git repo 執行（現在就能用）
-uvx --from git+https://github.com/tomclassless/cc-timeline cc-timeline
+# 或安裝成工具
+uv tool install cc-timeline
+pip install cc-timeline
 
-# 安裝成工具
-uv tool install git+https://github.com/tomclassless/cc-timeline   # 或：uv tool install cc-timeline
-pip install git+https://github.com/tomclassless/cc-timeline       # 或：pip install cc-timeline
+# 從 git repo 跑尚未發佈的最新版
+uvx --from git+https://github.com/tomclassless/cc-timeline cc-timeline
 ```
 
 也可以用 `python -m cc_timeline`。
@@ -57,7 +57,7 @@ pip install git+https://github.com/tomclassless/cc-timeline       # 或：pip in
 /cc-timeline:timeline --days 14
 ```
 
-`timeline` skill 會帶著你給的參數執行 `cc-timeline --html --open`，並摘要結果。目前它透過 `uvx --from git+https://github.com/tomclassless/cc-timeline` 從 git repo 執行；套件上 PyPI 之後可改成單純的 `uvx cc-timeline`。
+`timeline` skill 會帶著你給的參數執行 `cc-timeline --html --open`，並摘要結果。它用 `uvx cc-timeline` 執行已發佈的套件。
 
 ## 用法
 
@@ -130,7 +130,7 @@ Claude Code 的逐字稿格式沒有公開文件（`turnOrigin`、`queue-operati
 `cc-timeline mcp` 會啟動一個 MCP server（stdio，只用標準函式庫），讓 Claude 查詢自己的時間分配。加進 Claude Code：
 
 ```bash
-claude mcp add cc-timeline -- uvx --from git+https://github.com/tomclassless/cc-timeline cc-timeline mcp
+claude mcp add -s user cc-timeline -- uvx cc-timeline mcp
 ```
 
 （套件上 PyPI 後可簡化成 `claude mcp add cc-timeline -- uvx cc-timeline mcp`。）安裝 plugin 時會自動註冊同一個 server。Claude Desktop 則在 `claude_desktop_config.json` 加：
@@ -140,7 +140,7 @@ claude mcp add cc-timeline -- uvx --from git+https://github.com/tomclassless/cc-
   "mcpServers": {
     "cc-timeline": {
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/tomclassless/cc-timeline", "cc-timeline", "mcp"]
+      "args": ["cc-timeline", "mcp"]
     }
   }
 }

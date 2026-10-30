@@ -3,7 +3,7 @@ name: timeline
 description: Generate a cc-timeline HTML report showing where time went in recent Claude Code sessions (model, tools, background waits, waiting for you).
 argument-hint: "[--days N] [--project NAME] [--since YYYY-MM-DD]"
 disable-model-invocation: true
-allowed-tools: Bash(uvx --from git+https://github.com/tomclassless/cc-timeline cc-timeline *)
+allowed-tools: Bash(uvx cc-timeline *)
 ---
 
 Run these two commands with the Bash tool, passing the user's arguments through unchanged:
@@ -11,13 +11,13 @@ Run these two commands with the Bash tool, passing the user's arguments through 
 1. Write and open the HTML report:
 
 ```
-uvx --from git+https://github.com/tomclassless/cc-timeline cc-timeline --html --open $ARGUMENTS
+uvx cc-timeline --html --open $ARGUMENTS
 ```
 
 2. Print the text summary (the HTML command only prints the output path):
 
 ```
-uvx --from git+https://github.com/tomclassless/cc-timeline cc-timeline $ARGUMENTS
+uvx cc-timeline $ARGUMENTS
 ```
 
 Then report to the user:

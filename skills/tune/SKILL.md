@@ -3,7 +3,7 @@ name: tune
 description: Review where recent Claude Code time went, compare it with the previous period, and propose (never apply) settings changes to agents, tests and polling.
 argument-hint: "[--days N] [--project NAME]"
 disable-model-invocation: true
-allowed-tools: Bash(uvx --from git+https://github.com/tomclassless/cc-timeline cc-timeline *)
+allowed-tools: Bash(uvx cc-timeline *)
 ---
 
 You are tuning the user's Claude Code setup from measured time, not from guesses. Arguments: `$ARGUMENTS` (`--days N`, default 7; `--project NAME`, optional).
@@ -27,8 +27,8 @@ Prefer the cc-timeline MCP tools if they are available:
 If the MCP tools are not available, run these with Bash (same data as JSON):
 
 ```
-uvx --from git+https://github.com/tomclassless/cc-timeline cc-timeline compare --before SINCE:UNTIL --after SINCE:UNTIL [--project NAME] --json
-uvx --from git+https://github.com/tomclassless/cc-timeline cc-timeline quality --since SINCE --until UNTIL [--project NAME] --json
+uvx cc-timeline compare --before SINCE:UNTIL --after SINCE:UNTIL [--project NAME] --json
+uvx cc-timeline quality --since SINCE --until UNTIL [--project NAME] --json
 ```
 
 (`cc-timeline --agents` prints the agent phase table as text if you need it.)

@@ -5,7 +5,7 @@
   "mcpServers": {
     "cc-timeline": {
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/tomclassless/cc-timeline", "cc-timeline", "mcp"]
+      "args": ["cc-timeline", "mcp"]
     }
   }
 }
