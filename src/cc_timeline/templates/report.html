@@ -59,6 +59,8 @@ select { max-width: 100%; margin: 0 0 10px; padding: 4px 8px; border: 1px solid 
   border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; }
 .hatch { background: repeating-linear-gradient(45deg, var(--muted) 0 1px, var(--axis) 1px 4px); }
 footer { margin-top: 24px; color: var(--muted); font-size: 12px; }
+footer .credit { margin: 0; }
+footer a { color: var(--muted); }
 footer .warn { color: var(--s2); margin: 0 0 4px; }
 #tip { position: fixed; pointer-events: none; background: var(--surface); color: var(--ink);
   border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 12px;
@@ -126,7 +128,10 @@ footer .warn { color: var(--s2); margin: 0 0 4px; }
     <p class="sub" data-l="sessions_sub"></p>
     <div class="scroll" id="sessions"></div>
   </section>
-  <footer id="foot"></footer>
+  <footer>
+    <div id="foot"></div>
+    <p class="credit"><a href="https://github.com/tomclassless/cc-timeline" rel="noopener" data-l="credit"></a></p>
+  </footer>
 </main>
 <div id="tip"></div>
 
