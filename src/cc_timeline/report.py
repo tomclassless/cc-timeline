@@ -4,13 +4,14 @@ import hashlib
 import json
 import re
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from .agents import PHASE_GROUPS, agent_files, phase_group, scan_agent
 from .i18n import agent_name, item_name, labels
-from .transcript import TRACE_VALUE_KEYS, parse_ts, shape, trace_value
+from .transcript import (KNOWN_ORIGINS, KNOWN_TYPES, TRACE_VALUE_KEYS, parse_ts, shape, trace_value,
+                         version_key)
 
 TEMPLATE = Path(__file__).parent / "templates" / "report.html"
 BUCKET_KEYS = ("model", "tool", "bg", "user")
@@ -118,6 +119,32 @@ def aggregate(results):
             calls[k] += r["tool_calls"][k]
     return {"n": len(results), "totals": totals, "tools": tools, "calls": calls,
             "api_errors": sum(r["api_errors"] for r in results)}
+
+
+def format_summary(results):
+    """What the scan saw: entry types, turn origins, Claude Code versions, and unknown values."""
+    types, origins, versions = Counter(), Counter(), set()
+    for r in results:
+        f = r["format"]
+        types.update(f["types"])
+        origins.update(f["origins"])
+        versions |= f["versions"]
+    ordered = sorted(versions, key=version_key)
+    return {"types": dict(sorted(types.items())), "origins": dict(sorted(origins.items())),
+            "versions": {"min": ordered[0] if ordered else None, "max": ordered[-1] if ordered else None},
+            "unknown": {"types": {k: v for k, v in sorted(types.items()) if k not in KNOWN_TYPES},
+                        "origins": {k: v for k, v in sorted(origins.items()) if k not in KNOWN_ORIGINS}}}
+
+
+def format_warning(L, summary):
+    """One-line warning for unknown types/origins; empty string when everything is known."""
+    unknown = summary["unknown"]
+    parts = []
+    for key in ("types", "origins"):
+        if unknown[key]:
+            names = ", ".join(f"{k} x{v}" for k, v in unknown[key].items())
+            parts.append(f"{L['fmt_' + key]}: {names}")
+    return L["warn_format"].format(what="; ".join(parts)) if parts else ""
 
 
 def session_rows(results, L):
@@ -232,6 +259,7 @@ def build_report(results, days, project, lang, idle_cap, redacted=False, since=N
             d["total"] += total
             d["think"] += phases.get("think", 0)
 
+    fmt_summary = format_summary(results)
     if redacted:
         shown = L["redacted"] if project else L["all_projects"]
     else:
@@ -245,6 +273,7 @@ def build_report(results, days, project, lang, idle_cap, redacted=False, since=N
         "period": period_text(L, days, since, until), "project": shown,
         "sessionCount": len(results),
         "apiErrors": agg["api_errors"],
+        "format": fmt_summary, "formatWarning": format_warning(L, fmt_summary),
         "totals": dict(totals),
         "daily": [{"date": d, **v} for d, v in sorted(daily.items())],
         "items": [{"name": item_name(L, k), **v} for k, v in ranked],

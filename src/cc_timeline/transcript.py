@@ -2,7 +2,7 @@
 import json
 import os
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -16,6 +16,12 @@ ORIGIN_KIND = {
     "peer": "peer",
     "sdk": "sdk",
 }
+
+# The transcript format is undocumented. These are the values this tool was written against;
+# anything else is reported (see report.format_summary) so format changes are noticed early.
+KNOWN_TYPES = {"user", "assistant", "system", "attachment", "queue-operation", "api-request",
+               "api-request-shape", "file-history-snapshot", "progress", "summary"}
+KNOWN_ORIGINS = {"human", "peer", "task_notification", "task-notification", "sdk"}
 
 _FRAC_RE = re.compile(r"\.(\d+)")
 
@@ -124,7 +130,24 @@ def shape(entry):
     return f"{t}:{kind}"
 
 
-def load_entries(path, keep_sidechain=False):
+def version_key(v):
+    return tuple(int(n) for n in re.findall(r"\d+", v))
+
+
+def count_format(e, stats):
+    """Tally entry type, turn origin and Claude Code version of one raw entry."""
+    stats["types"][str(e.get("type"))[:40]] += 1
+    o = e.get("origin")
+    origin = e.get("turnOrigin") or (o.get("kind") if isinstance(o, dict) else None)
+    if origin:
+        stats["origins"][str(origin)[:40]] += 1
+    v = e.get("version")
+    if isinstance(v, str) and re.search(r"\d", v):
+        stats["versions"].add(v[:30])
+
+
+def load_entries(path, keep_sidechain=False, stats=None):
+    """Timestamped entries sorted by time. `stats` (optional) tallies every parsed line."""
     entries = []
     with open(path, encoding="utf-8", errors="replace") as f:
         for line in f:
@@ -134,6 +157,8 @@ def load_entries(path, keep_sidechain=False):
                 continue
             if not isinstance(e, dict):
                 continue
+            if stats is not None and "type" in e:
+                count_format(e, stats)
             # Old versions wrote subagent steps into the main file (isSidechain); that time is
             # already inside the Task tool call. Subagent files are entirely sidechain.
             if (e.get("isSidechain") and not keep_sidechain) or not e.get("timestamp"):
@@ -145,7 +170,8 @@ def load_entries(path, keep_sidechain=False):
 
 def analyze(path, idle_cap):
     """Analyze one main-session transcript. idle_cap is in seconds. Returns None if too short."""
-    entries = load_entries(path)
+    fmt_stats = {"types": Counter(), "origins": Counter(), "versions": set()}
+    entries = load_entries(path, stats=fmt_stats)
     if len(entries) < 2:
         return None
 
@@ -210,6 +236,7 @@ def analyze(path, idle_cap):
         "prompts": sum(1 for e in entries if classify(e, {})[0] == "user"),
         "path": path,
         "agent_corpus": agents,
+        "format": fmt_stats,
     }
 
 

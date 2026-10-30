@@ -477,3 +477,55 @@ def test_agent_scan_is_cached_per_session(tmp_path, monkeypatch):
     report.build_report(results, 7, None, "en", CAP)
     report.print_agents(results, "en", CAP)
     assert len(calls) == 1
+
+
+# ── format drift ──
+
+def known_session():
+    s = Session().user(0, version="2.0.9").assistant(5, version="2.0.10")
+    s.raw(6, "progress", version="1.9.0")
+    s.raw(7, "attachment")
+    s.user(11, turnOrigin="human").user(20, turnOrigin="peer")
+    return s
+
+
+def test_format_known_values_no_warning(tmp_path, capsys):
+    path = known_session().write(tmp_path)
+    with path.open("a") as f:
+        f.write(json.dumps({"type": "summary", "summary": "x"}) + "\n")  # no timestamp
+    cli.main(["--root", str(tmp_path), *ALL])
+    assert capsys.readouterr().err == ""
+    cli.main(["--root", str(tmp_path), *ALL, "--json"])
+    data = json.loads(capsys.readouterr().out)
+    fmt = data["format"]
+    assert fmt["types"] == {"assistant": 1, "attachment": 1, "progress": 1, "summary": 1, "user": 3}
+    assert fmt["origins"] == {"human": 1, "peer": 1}
+    assert fmt["versions"] == {"min": "1.9.0", "max": "2.0.10"}
+    assert fmt["unknown"] == {"types": {}, "origins": {}}
+    assert data["formatWarning"] == ""
+
+
+@pytest.mark.parametrize("lang,needle", [("en", "open an issue"), ("zh-TW", "請開 issue")])
+def test_format_unknown_warns(tmp_path, capsys, lang, needle):
+    s = known_session()
+    s.raw(8, "hologram").raw(9, "hologram")
+    s.user(30, turnOrigin="weird")
+    s.write(tmp_path)
+    out = tmp_path / "f.html"
+    cli.main(["--root", str(tmp_path), *ALL, "--lang", lang])
+    err = capsys.readouterr().err.strip()
+    assert "hologram x2" in err and "weird x1" in err and needle in err
+    assert len(err.splitlines()) == 1
+    cli.main(["--root", str(tmp_path), *ALL, "--lang", lang, "--html", str(out)])
+    capsys.readouterr()
+    html = out.read_text(encoding="utf-8")
+    data = json.loads(re.search(r'<script id="data" type="application/json">(.*?)</script>',
+                                html, re.S).group(1).replace("<\\/", "</"))
+    assert data["format"]["unknown"] == {"types": {"hologram": 2}, "origins": {"weird": 1}}
+    assert needle in data["formatWarning"]
+    assert 'id="foot"' in html
+    cli.main(["--root", str(tmp_path), *ALL, "--json"])
+    assert json.loads(capsys.readouterr().out)["format"]["unknown"]["types"] == {"hologram": 2}
+    # unknown origin still counts as background, labelled by its value
+    r = analyze(next(tmp_path.glob("*/*.jsonl")), CAP)
+    assert r["tools"][("other", "weird")] == 10

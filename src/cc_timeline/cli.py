@@ -6,7 +6,7 @@ from pathlib import Path
 
 from . import __version__
 from .i18n import labels, resolve_lang
-from .report import (build_report, export_csv, print_agents, print_detail, print_groups, print_summary,
+from .report import (build_report, format_summary, format_warning, export_csv, print_agents, print_detail, print_groups, print_summary,
                      print_trace, redact, to_json, write_html)
 from .transcript import analyze, default_root, find_sessions
 
@@ -36,6 +36,13 @@ def date_range(args, now=None):
         lo = None
     hi = local_midnight(args.until + timedelta(days=1)) if args.until else None
     return lo, hi
+
+
+def warn_format(L, results):
+    """Last line of CLI output (stderr): unknown transcript entry types / origins, if any."""
+    warning = format_warning(L, format_summary(results))
+    if warning:
+        print(warning, file=sys.stderr)
 
 
 def build_parser():
@@ -109,6 +116,7 @@ def main(argv=None):
         if args.html:
             out = write_html(data, args.html)
             print(L["report_written"].format(path=out), file=sys.stderr if args.json else sys.stdout)
+            warn_format(L, results)
             if args.open:
                 import webbrowser
                 webbrowser.open(out.resolve().as_uri())
@@ -127,6 +135,7 @@ def main(argv=None):
         print_groups(results, args.by, lang)
     else:
         print_summary(results, lang, args.top)
+    warn_format(L, results)
     return 0
 
 

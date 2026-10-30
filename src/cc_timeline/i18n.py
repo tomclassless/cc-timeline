@@ -48,6 +48,10 @@ EN = {
     "d_idle": "Away (gaps over threshold)",
     "d_slowest": "Slowest {n} steps:",
     "report_written": "Report written to {path}",
+    "fmt_types": "unknown entry types", "fmt_origins": "unknown turn origins",
+    "warn_format": "Warning: unrecognised transcript data ({what}). This may be a Claude Code format "
+                   "update, so results may be inaccurate. Please open an issue.",
+    "format_versions": "Claude Code versions seen: {min} to {max}",
     "csv_written": "CSV written to {path}",
     "by_day": "Day", "by_week": "Week (ISO)", "by_project": "Project", "by_session": "Session",
     "col_n": "N",
@@ -122,6 +126,10 @@ ZH = {
     "d_idle": "離開（超過門檻的空檔）",
     "d_slowest": "最慢的 {n} 步：",
     "report_written": "報表已寫入 {path}",
+    "fmt_types": "未知的 entry type", "fmt_origins": "未知的 turn origin",
+    "warn_format": "警告：遇到無法辨識的逐字稿資料（{what}）。可能是 Claude Code 格式更新，"
+                   "結果可能不準，請開 issue。",
+    "format_versions": "看到的 Claude Code 版本：{min} 至 {max}",
     "csv_written": "CSV 已寫入 {path}",
     "by_day": "日", "by_week": "週（ISO）", "by_project": "專案", "by_session": "Session",
     "col_n": "數量",

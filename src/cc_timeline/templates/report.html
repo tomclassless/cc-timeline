@@ -55,6 +55,8 @@ th:first-child, td:first-child, th.l, td.l { text-align: left; }
 th { color: var(--ink-2); font-weight: 500; }
 th.sort { cursor: pointer; user-select: none; }
 th.sort:hover { color: var(--ink); }
+footer { margin-top: 24px; color: var(--muted); font-size: 12px; }
+footer .warn { color: var(--s2); margin: 0 0 4px; }
 #tip { position: fixed; pointer-events: none; background: var(--surface); color: var(--ink);
   border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 12px;
   box-shadow: 0 4px 16px rgba(0,0,0,.12); display: none; z-index: 10; max-width: 280px; }
@@ -112,6 +114,7 @@ th.sort:hover { color: var(--ink); }
     <p class="sub" data-l="sessions_sub"></p>
     <div class="scroll" id="sessions"></div>
   </section>
+  <footer id="foot"></footer>
 </main>
 <div id="tip"></div>
 
@@ -340,6 +343,11 @@ function drawSessions() {
     sortKey = k; drawSessions();
   });
 }
+
+const fv = D.format.versions;
+document.getElementById("foot").innerHTML =
+  (D.formatWarning ? `<p class="warn">${esc(D.formatWarning)}</p>` : "") +
+  (fv.min ? `<p>${esc(tpl("format_versions", {min: fv.min, max: fv.max}))}</p>` : "");
 
 function drawAll() {
   drawDaily(); drawItems(); drawAgents();
