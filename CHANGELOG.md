@@ -13,4 +13,7 @@ First public release, packaged from a personal prototype.
 - Grouping and export: `--by day|week|project|session`, `--csv PATH`.
 - Privacy: `--redact` hides project names, session ids, custom agent types and MCP server names everywhere (table, `--by`, `--agents`, `--trace`, HTML, JSON, CSV); trace output shows only tag names for `<...>` user messages and masks free-text `reason`.
 - Format-change detection: counts entry types, turn origins and Claude Code versions; warns (CLI stderr, except with `--json` alone; HTML footer) on unknown ones; `--json` has a `format` block.
+- Claude Code plugin and marketplace (`/plugin marketplace add tomclassless/cc-timeline`, `/cc-timeline:timeline`).
+- HTML report footer links back to the project.
+- Release workflow: publishing a GitHub release builds and uploads to PyPI via Trusted Publishing; package metadata (classifiers, URLs) for PyPI.
 - English and Traditional Chinese (`--lang zh-TW` or `CC_TIMELINE_LANG`).
