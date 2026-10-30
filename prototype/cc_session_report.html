@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Code 時間分析</title>
+<style>
+:root {
+  --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --border: #e1e0d9;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #6250d6;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: #2c2c2a;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink);
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "PingFang TC", "Noto Sans TC", sans-serif;
+  font-variant-numeric: tabular-nums; }
+main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
+h1 { font-size: 22px; margin: 0 0 4px; }
+h2 { font-size: 16px; margin: 0 0 2px; }
+.meta, .sub { color: var(--ink-2); margin: 0; }
+.sub { font-size: 13px; margin-bottom: 12px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  padding: 16px; margin-top: 16px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.grid2 .card { margin-top: 0; }
+@media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
+.tiles { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-top: 16px; }
+@media (max-width: 760px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
+.tile { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+.tile .label { color: var(--ink-2); font-size: 13px; display: flex; align-items: center; gap: 6px; }
+.tile .value { font-size: 26px; font-weight: 600; margin-top: 2px; }
+.tile .note { color: var(--muted); font-size: 12px; }
+.sw { width: 10px; height: 10px; border-radius: 3px; display: inline-block; flex: none; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0 0 8px; color: var(--ink-2); font-size: 13px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+svg { display: block; width: 100%; overflow: visible; }
+svg text { fill: var(--muted); font-size: 11px; }
+svg .ink { fill: var(--ink-2); font-size: 12px; }
+svg .grid { stroke: var(--grid); stroke-width: 1; }
+svg .axis { stroke: var(--axis); stroke-width: 1; }
+.hit:hover { opacity: .85; }
+details { margin-top: 10px; }
+summary { cursor: pointer; color: var(--ink-2); font-size: 13px; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; margin-top: 8px; }
+th, td { text-align: right; padding: 5px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+th:first-child, td:first-child, th.l, td.l { text-align: left; }
+th { color: var(--ink-2); font-weight: 500; }
+th.sort { cursor: pointer; user-select: none; }
+th.sort:hover { color: var(--ink); }
+#tip { position: fixed; pointer-events: none; background: var(--surface); color: var(--ink);
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 12px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.12); display: none; z-index: 10; max-width: 280px; }
+#tip b { font-weight: 600; }
+.empty { color: var(--muted); padding: 24px 0; text-align: center; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Claude Code 時間分析</h1>
+  <p class="meta" id="meta"></p>
+  <div class="tiles" id="tiles"></div>
+
+  <section class="card">
+    <h2>每日時間分配</h2>
+    <p class="sub">各 session 依開始日期歸日；不含「離開」（單一空檔超過門檻）的時間。</p>
+    <div class="legend" id="dailyLegend"></div>
+    <div id="daily"></div>
+    <details><summary>表格</summary><div class="scroll" id="dailyTable"></div></details>
+  </section>
+
+  <section class="card">
+    <h2>時間花在哪</h2>
+    <p class="sub">工具：工具真的在執行。背景：主對話閒著，在等 agent、其他 session 或 App。前 15 名。</p>
+    <div class="legend" id="itemsLegend"></div>
+    <div id="items"></div>
+    <details><summary>表格</summary><div class="scroll" id="itemsTable"></div></details>
+  </section>
+
+  <section class="card">
+    <h2>Agent 內部時間</h2>
+    <p class="sub">讀各 subagent 自己的逐字稿；平行執行的 agent 會疊加，所以總和可能大於主對話等待的時間。</p>
+    <div class="legend" id="agentsLegend"></div>
+    <div id="agents"></div>
+    <details><summary>表格</summary><div class="scroll" id="agentsTable"></div></details>
+  </section>
+
+  <div class="grid2" style="margin-top:16px">
+    <section class="card">
+      <h2>每次平均時長</h2>
+      <p class="sub">依 agent 開始日期；用來看設定調整前後的變化。</p>
+      <div class="legend" id="durLegend"></div>
+      <div id="dur"></div>
+    </section>
+    <section class="card">
+      <h2>思考占比</h2>
+      <p class="sub">agent 內部時間中，模型 thinking 所占的比例。</p>
+      <div class="legend" id="thinkLegend"></div>
+      <div id="think"></div>
+    </section>
+  </div>
+
+  <section class="card">
+    <h2>Sessions</h2>
+    <p class="sub">點欄位標題排序。</p>
+    <div class="scroll" id="sessions"></div>
+  </section>
+</main>
+<div id="tip"></div>
+
+<script id="data" type="application/json">__DATA__</script>
+<script>
+const D = JSON.parse(document.getElementById("data").textContent);
+const C = i => `var(--s${i + 1})`;
+const BUCKETS = [["model", "模型生成"], ["tool", "工具執行"], ["bg", "背景／其他來源"], ["user", "等你"]];
+const NS = "http://www.w3.org/2000/svg";
+
+function fmt(sec) {
+  sec = Math.round(sec);
+  const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60;
+  if (h) return `${h}h${String(m).padStart(2, "0")}m`;
+  if (m) return `${m}m${String(s).padStart(2, "0")}s`;
+  return `${s}s`;
+}
+const pct = (a, b) => b ? `${Math.round(a / b * 100)}%` : "-";
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+const sum = a => a.reduce((x, y) => x + y, 0);
+
+function el(tag, attrs = {}, parent) {
+  const e = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+function svg(host, h) {
+  host.innerHTML = "";
+  const w = host.clientWidth || 600;
+  const s = el("svg", {viewBox: `0 0 ${w} ${h}`, height: h}, host);
+  return [s, w];
+}
+// 只圓資料端的長方形：dir = "top"（直條）或 "right"（橫條）
+function bar(parent, x, y, w, h, r, dir, fill) {
+  r = Math.max(0, Math.min(r, dir === "top" ? w / 2 : h / 2, dir === "top" ? h : w));
+  const d = dir === "top"
+    ? `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`
+    : `M${x},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h - r}Q${x + w},${y + h} ${x + w - r},${y + h}H${x}Z`;
+  return el("path", {d, fill, class: "hit"}, parent);
+}
+function niceMax(v) {
+  if (v <= 0) return 1;
+  const p = Math.pow(10, Math.floor(Math.log10(v))), n = v / p;
+  return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * p;
+}
+
+const tip = document.getElementById("tip");
+function hover(node, html) {
+  node.addEventListener("mousemove", e => {
+    tip.innerHTML = html; tip.style.display = "block";
+    const x = Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8);
+    const y = Math.min(e.clientY + 14, innerHeight - tip.offsetHeight - 8);
+    tip.style.left = x + "px"; tip.style.top = y + "px";
+  });
+  node.addEventListener("mouseleave", () => tip.style.display = "none");
+}
+function legend(id, names) {
+  document.getElementById(id).innerHTML = names.map((n, i) =>
+    `<span><i class="sw" style="background:${C(i)}"></i>${esc(n)}</span>`).join("");
+}
+function table(id, head, rows) {
+  document.getElementById(id).innerHTML = `<table><thead><tr>${head.map(h => `<th>${esc(h)}</th>`).join("")}</tr></thead>
+    <tbody>${rows.map(r => `<tr>${r.map(c => `<td>${esc(c)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+}
+function empty(id, msg) { document.getElementById(id).innerHTML = `<div class="empty">${msg}</div>`; }
+
+// ── 標題與數字卡 ──
+const T = D.totals, busy = sum(BUCKETS.map(([k]) => T[k] || 0));
+document.getElementById("meta").textContent =
+  `${D.project} · 最近 ${D.days} 天 · ${D.sessionCount} 個 session · API 錯誤 ${D.apiErrors} 次 · 產生於 ${D.generated}`;
+document.getElementById("tiles").innerHTML =
+  `<div class="tile"><div class="label">活躍時間</div><div class="value">${fmt(busy)}</div>
+     <div class="note">另有離開 ${fmt(T.idle || 0)}</div></div>` +
+  BUCKETS.map(([k, n], i) => `<div class="tile"><div class="label"><i class="sw" style="background:${C(i)}"></i>${n}</div>
+     <div class="value">${pct(T[k] || 0, busy)}</div><div class="note">${fmt(T[k] || 0)}</div></div>`).join("");
+
+// ── 每日堆疊直條 ──
+function drawDaily() {
+  const host = document.getElementById("daily");
+  if (!D.daily.length) return empty("daily", "沒有資料");
+  const H = 240, m = {l: 40, r: 8, t: 10, b: 26};
+  const [s, W] = svg(host, H);
+  const max = niceMax(Math.max(...D.daily.map(d => sum(BUCKETS.map(([k]) => d[k] || 0)))) / 3600);
+  const y = v => m.t + (H - m.t - m.b) * (1 - v / max);
+  for (let i = 0; i <= 4; i++) {
+    const v = max * i / 4;
+    el("line", {x1: m.l, x2: W - m.r, y1: y(v), y2: y(v), class: i ? "grid" : "axis"}, s);
+    el("text", {x: m.l - 6, y: y(v) + 4, "text-anchor": "end"}, s).textContent = `${+v.toFixed(1)}h`;
+  }
+  const band = (W - m.l - m.r) / D.daily.length, bw = Math.min(24, band * .6);
+  const every = Math.ceil(D.daily.length / Math.max(1, Math.floor((W - m.l) / 56)));
+  D.daily.forEach((d, i) => {
+    const x = m.l + band * i + (band - bw) / 2, total = sum(BUCKETS.map(([k]) => d[k] || 0));
+    let acc = 0;
+    const segs = BUCKETS.map(([k], j) => [k, j, (d[k] || 0) / 3600]).filter(([, , v]) => v > 0);
+    segs.forEach(([k, j, v], idx) => {
+      const top = y(acc + v), bottom = y(acc), last = idx === segs.length - 1;
+      const h = Math.max(0, bottom - top - (acc > 0 ? 2 : 0));
+      const p = bar(s, x, top, bw, h, last ? 4 : 0, "top", C(j));
+      hover(p, `<b>${d.date}</b><br>${BUCKETS[j][1]}：${fmt(d[k])}（${pct(d[k], total)}）<br>當日合計 ${fmt(total)}`);
+      acc += v;
+    });
+    if (i % every === 0)
+      el("text", {x: x + bw / 2, y: H - 8, "text-anchor": "middle"}, s).textContent = d.date.slice(5);
+  });
+}
+legend("dailyLegend", BUCKETS.map(b => b[1]));
+table("dailyTable", ["日期", ...BUCKETS.map(b => b[1]), "合計"],
+  D.daily.map(d => [d.date, ...BUCKETS.map(([k]) => fmt(d[k] || 0)), fmt(sum(BUCKETS.map(([k]) => d[k] || 0)))]));
+
+// ── 前 15 名橫條 ──
+const KIND = {tool: [1, "工具"], bg: [2, "背景"]};
+function drawItems() {
+  const host = document.getElementById("items");
+  if (!D.items.length) return empty("items", "沒有資料");
+  const row = 28, H = D.items.length * row + 4;
+  const [s, W] = svg(host, H);
+  const lw = Math.min(260, W * .38), vw = 64, max = D.items[0].sec;
+  const total = sum(D.items.map(i => i.sec));
+  D.items.forEach((it, i) => {
+    const yy = i * row + 4, w = Math.max(2, (W - lw - vw) * it.sec / max);
+    const t = el("text", {x: lw - 10, y: yy + 14, "text-anchor": "end", class: "ink"}, s);
+    t.textContent = it.name.length > 26 ? it.name.slice(0, 25) + "…" : it.name;
+    const p = bar(s, lw, yy + 2, w, 16, 4, "right", C(KIND[it.kind][0]));
+    hover(p, `<b>${esc(it.name)}</b><br>${KIND[it.kind][1]} · ${it.n} 次 · 合計 ${fmt(it.sec)}<br>平均 ${fmt(it.sec / it.n)}`);
+    el("text", {x: lw + w + 6, y: yy + 14}, s).textContent = fmt(it.sec);
+  });
+}
+document.getElementById("itemsLegend").innerHTML =
+  `<span><i class="sw" style="background:${C(1)}"></i>工具執行</span><span><i class="sw" style="background:${C(2)}"></i>背景／其他來源</span>`;
+table("itemsTable", ["項目", "類型", "次數", "總時間", "平均"],
+  D.items.map(i => [i.name, KIND[i.kind][1], i.n, fmt(i.sec), fmt(i.sec / i.n)]));
+
+// ── Agent 內部 100% 堆疊橫條 ──
+function drawAgents() {
+  const host = document.getElementById("agents");
+  if (!D.agents.length) return empty("agents", "這些 session 沒有 subagent 逐字稿");
+  const row = 44, H = D.agents.length * row;
+  const [s, W] = svg(host, H);
+  const lw = Math.min(170, W * .3), rw = 110, bwMax = W - lw - rw;
+  D.agents.forEach((a, i) => {
+    const yy = i * row + 6, total = sum(Object.values(a.phases));
+    el("text", {x: lw - 10, y: yy + 13, "text-anchor": "end", class: "ink"}, s).textContent = a.type;
+    el("text", {x: lw - 10, y: yy + 28, "text-anchor": "end"}, s).textContent = `${a.runs} 次`;
+    const segs = D.phaseGroups.map((g, j) => [g, j, a.phases[g] || 0]).filter(([, , v]) => v > 0);
+    let x = lw;
+    segs.forEach(([g, j, v], idx) => {
+      const last = idx === segs.length - 1, w = bwMax * v / total;
+      const p = bar(s, x, yy + 4, Math.max(0, w - (last ? 0 : 2)), 20, last ? 4 : 0, "right", C(j));
+      hover(p, `<b>${esc(a.type)}</b> · ${g}<br>${fmt(v)}（${pct(v, total)}）<br>平均每次 ${fmt(v / a.runs)}`);
+      x += w;
+    });
+    el("text", {x: lw + bwMax + 8, y: yy + 13, class: "ink"}, s).textContent = `平均 ${fmt(total / a.runs)}`;
+    el("text", {x: lw + bwMax + 8, y: yy + 28}, s).textContent = `合計 ${fmt(total)}`;
+  });
+}
+legend("agentsLegend", D.phaseGroups);
+table("agentsTable", ["Agent", "次數", "平均", ...D.phaseGroups],
+  D.agents.map(a => { const t = sum(Object.values(a.phases));
+    return [a.type, a.runs, fmt(t / a.runs), ...D.phaseGroups.map(g => `${fmt(a.phases[g] || 0)}（${pct(a.phases[g] || 0, t)}）`)]; }));
+
+// ── 趨勢折線（每張一個 y 軸） ──
+const TREND_TYPES = D.agents.slice(0, 3).map(a => a.type);
+const dates = [...new Set(D.agentDaily.map(d => d.date))].sort();
+function drawLine(id, value, yfmt) {
+  const host = document.getElementById(id);
+  if (!dates.length) return empty(id, "沒有 agent 資料");
+  const H = 200, m = {l: 44, r: 12, t: 10, b: 26};
+  const [s, W] = svg(host, H);
+  const series = TREND_TYPES.map(t => dates.map(d => {
+    const r = D.agentDaily.find(x => x.date === d && x.type === t);
+    return r ? {d, v: value(r), r} : null;
+  }));
+  const max = niceMax(Math.max(...series.flat().filter(Boolean).map(p => p.v), 0) * 1.05);
+  const x = i => dates.length === 1 ? (m.l + W - m.r) / 2 : m.l + (W - m.l - m.r) * i / (dates.length - 1);
+  const y = v => m.t + (H - m.t - m.b) * (1 - v / max);
+  for (let i = 0; i <= 4; i++) {
+    const v = max * i / 4;
+    el("line", {x1: m.l, x2: W - m.r, y1: y(v), y2: y(v), class: i ? "grid" : "axis"}, s);
+    el("text", {x: m.l - 6, y: y(v) + 4, "text-anchor": "end"}, s).textContent = yfmt(v);
+  }
+  const every = Math.ceil(dates.length / Math.max(1, Math.floor((W - m.l) / 56)));
+  dates.forEach((d, i) => { if (i % every === 0)
+    el("text", {x: x(i), y: H - 8, "text-anchor": "middle"}, s).textContent = d.slice(5); });
+  series.forEach((pts, j) => {
+    let path = "";
+    pts.forEach((p, i) => { if (p) path += `${path && pts[i - 1] ? "L" : "M"}${x(i)},${y(p.v)}`; });
+    el("path", {d: path, fill: "none", stroke: C(j), "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round"}, s);
+    pts.forEach((p, i) => {
+      if (!p) return;
+      el("circle", {cx: x(i), cy: y(p.v), r: 4, fill: C(j), stroke: "var(--surface)", "stroke-width": 2}, s);
+      const hit = el("circle", {cx: x(i), cy: y(p.v), r: 12, fill: "transparent"}, s);
+      hover(hit, `<b>${esc(TREND_TYPES[j])}</b> · ${p.d}<br>${p.r.runs} 次 · 平均 ${fmt(p.r.total / p.r.runs)}<br>思考 ${pct(p.r.think, p.r.total)}`);
+    });
+  });
+}
+legend("durLegend", TREND_TYPES);
+legend("thinkLegend", TREND_TYPES);
+
+// ── Session 表（可排序） ──
+const COLS = [["start", "開始", "l"], ["project", "專案", "l"], ["id", "session", "l"], ["wall", "總時長"],
+  ["model", "模型"], ["tool", "工具"], ["bg", "背景"], ["user", "等你"], ["idle", "離開"], ["errors", "API 錯誤"], ["top", "最耗時項目", "l"]];
+let sortKey = "start", sortDir = -1;
+function drawSessions() {
+  const rows = [...D.sessions].sort((a, b) => (a[sortKey] > b[sortKey] ? 1 : a[sortKey] < b[sortKey] ? -1 : 0) * sortDir);
+  const cell = (r, k) => {
+    if (["wall", "idle"].includes(k)) return fmt(r[k]);
+    if (["model", "tool", "bg", "user"].includes(k)) {
+      const b = r.model + r.tool + r.bg + r.user;
+      return `${pct(r[k], b)} <span style="color:var(--muted)">${fmt(r[k])}</span>`;
+    }
+    return esc(r[k]);
+  };
+  document.getElementById("sessions").innerHTML = `<table><thead><tr>${COLS.map(([k, n, a]) =>
+    `<th class="sort ${a || ""}" data-k="${k}">${n}${k === sortKey ? (sortDir > 0 ? " ▲" : " ▼") : ""}</th>`).join("")}</tr></thead>
+    <tbody>${rows.map(r => `<tr>${COLS.map(([k, , a]) => `<td class="${a || ""}">${cell(r, k)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+  document.querySelectorAll("#sessions th").forEach(th => th.onclick = () => {
+    const k = th.dataset.k;
+    sortDir = k === sortKey ? -sortDir : (["start", "project", "id", "top"].includes(k) ? 1 : -1);
+    sortKey = k; drawSessions();
+  });
+}
+
+function drawAll() {
+  drawDaily(); drawItems(); drawAgents();
+  drawLine("dur", r => r.total / r.runs / 60, v => `${Math.round(v)}m`);
+  drawLine("think", r => r.think / r.total * 100, v => `${Math.round(v)}%`);
+}
+drawAll(); drawSessions();
+let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(drawAll, 150); });
+</script>
+</body>
+</html>
