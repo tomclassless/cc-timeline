@@ -110,7 +110,7 @@ def main(argv=None):
         redact(results)
 
     if args.csv:
-        out = export_csv(args.csv, results, L, args.by)
+        out = export_csv(args.csv, results, args.by)
         print(L["csv_written"].format(path=out), file=sys.stderr if args.json else sys.stdout)
 
     if args.html or args.json:

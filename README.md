@@ -88,7 +88,7 @@ Details:
 
 ## Format-change warning
 
-Claude Code's transcript format is undocumented (`turnOrigin`, `queue-operation`, `api-request`, ... are observed, not specified). While scanning, `cc-timeline` counts entry `type`s, `turnOrigin` / `origin.kind` values and the Claude Code `version` of each entry. If it sees a type or origin it does not know, it prints one warning line to stderr (and shows it in the HTML footer): the Claude Code format has probably changed, so numbers may be wrong. Please open an issue with the names shown. `--json` has a `format` block (`types`, `origins`, `versions`, `unknown`), and the HTML footer shows the range of Claude Code versions seen. Unknown origins are still counted as background, labelled "Other source (x)".
+Claude Code's transcript format is undocumented (`turnOrigin`, `queue-operation`, `api-request`, ... are observed, not specified). While scanning, `cc-timeline` counts entry `type`s, `turnOrigin` / `origin.kind` values and the Claude Code `version` of each entry. If it sees a type or origin it does not know, it prints one warning line to stderr (not when `--json` is the only output; `--html` still prints it) and shows it in the HTML footer: the Claude Code format has probably changed, so numbers may be wrong. Please open an issue with the names shown. `--json` has a `format` block (`types`, `origins`, `versions`, `unknown`), and the HTML footer shows the range of Claude Code versions seen. Unknown origins are still counted as background, labelled "Other source (x)".
 
 ## Limitations
 

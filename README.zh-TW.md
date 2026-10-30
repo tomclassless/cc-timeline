@@ -88,7 +88,7 @@ cc-timeline --lang zh-TW                     # 或設 CC_TIMELINE_LANG=zh-TW
 
 ## 格式變動警告
 
-Claude Code 的逐字稿格式沒有公開文件（`turnOrigin`、`queue-operation`、`api-request` 等都是觀察得來，不是規格）。掃描時 `cc-timeline` 會統計各 entry 的 `type`、`turnOrigin`／`origin.kind` 的值，以及每筆 entry 的 Claude Code `version`。遇到不認得的 type 或 origin 時，會在 CLI 結尾以 stderr 印一行警告（HTML 頁尾也會顯示），代表 Claude Code 格式很可能改了，數字可能不準，請帶著顯示的名稱開 issue。`--json` 有 `format` 區塊（`types`、`origins`、`versions`、`unknown`），HTML 頁尾會顯示看到的 Claude Code 版本範圍。未知的 origin 仍歸入背景，標為「其他來源（x）」。
+Claude Code 的逐字稿格式沒有公開文件（`turnOrigin`、`queue-operation`、`api-request` 等都是觀察得來，不是規格）。掃描時 `cc-timeline` 會統計各 entry 的 `type`、`turnOrigin`／`origin.kind` 的值，以及每筆 entry 的 Claude Code `version`。遇到不認得的 type 或 origin 時，會在 CLI 結尾以 stderr 印一行警告（只輸出 `--json` 時不印；`--html` 仍會印），HTML 頁尾也會顯示，代表 Claude Code 格式很可能改了，數字可能不準，請帶著顯示的名稱開 issue。`--json` 有 `format` 區塊（`types`、`origins`、`versions`、`unknown`），HTML 頁尾會顯示看到的 Claude Code 版本範圍。未知的 origin 仍歸入背景，標為「其他來源（x）」。
 
 ## 限制
 

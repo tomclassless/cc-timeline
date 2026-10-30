@@ -626,3 +626,40 @@ def test_html_timeline_card(tmp_path, capsys, lang, needle):
     assert 'id="tlCard"' in html
     s = data["timeline"]["sessions"][0]
     assert s["agents"][0]["type"] == "Agent(explorer)" and s["gaps"] == [[20, 100], [500, 4020]]
+
+
+def test_redact_agent_name_consistent_without_meta(tmp_path, capsys):
+    s = (Session().user(0).tool_use(1, "tu1", "Agent", {"subagent_type": "secretagent"})
+         .tool_result(2, "tu1", "agentId: abc12345678 started")
+         .user(20, "x", origin={"kind": "task_notification", "from": "abc12345678"}))
+    main = s.write(tmp_path)
+    Session(sidechain=True).user(0).thinking(4).assistant(9).write_agent(main, "abc12345678")  # no meta
+    base = ["--root", str(tmp_path), *ALL, "--redact"]
+    cli.main([*base, "--json"])
+    data = json.loads(capsys.readouterr().out)
+    assert [a["type"] for a in data["agents"]] == ["Agent(agent-1)"]
+    assert sorted(i["name"] for i in data["items"] if "agent" in i["name"]) == \
+        ["Agent(agent-1)", "Waiting for Agent(agent-1) report"]
+    assert [a["type"] for a in data["timeline"]["sessions"][0]["agents"]] == ["Agent(agent-1)"]
+    cli.main([*base, "--agents"])
+    out = capsys.readouterr().out
+    assert "Agent(agent-1)" in out and "agent-2" not in out and "secretagent" not in out
+
+
+def test_string_origin_does_not_crash(tmp_path, capsys):
+    s = Session().user(0).assistant(1).user(11, origin="weird")
+    r = run(s, tmp_path)
+    assert r["tools"] == {("other", "weird"): 10}
+    assert r["format"]["origins"] == {"weird": 1}
+    cli.main(["--root", str(tmp_path), *ALL])
+    assert "weird x1" in capsys.readouterr().err
+
+
+def test_csv_is_language_independent(tmp_path):
+    secret_root(tmp_path)
+    paths = []
+    for lang in ("en", "zh-TW"):
+        out = tmp_path / f"{lang}.csv"
+        cli.main(["--root", str(tmp_path), *ALL, "--csv", str(out), "--lang", lang])
+        paths.append(out.read_text(encoding="utf-8"))
+    assert paths[0] == paths[1] and ",Read" in paths[0]

@@ -73,7 +73,8 @@ class Scrubber:
 def redact(results):
     """Replace project names, session ids, custom agent types and MCP server names (in place).
 
-    Tool names, built-in agent types and all timings are kept.
+    Tool names, built-in agent types and all timings are kept. Agent labels in agent_corpus stay
+    raw (they are only used for matching); agent_runs() scrubs them once, at output time.
     """
     names = {}
     scrub = Scrubber()
@@ -87,7 +88,6 @@ def redact(results):
             calls[scrub.key(k)] += v
         r["tools"], r["tool_calls"] = tools, calls
         r["steps"] = [(g, c, scrub.key(d), t, tr) for g, c, d, t, tr in r["steps"]]
-        r["agent_corpus"] = [(text, scrub(label)) for text, label in r["agent_corpus"]]
         r["scrub"] = scrub
     return results
 
@@ -305,19 +305,19 @@ def write_csv(path, header, rows):
     return path
 
 
-SESSION_CSV = ("start", "project", "id", "wall", *BUCKET_KEYS, "idle", "errors", "top")
-GROUP_CSV = ("key", "n", "active", *ALL_KEYS)
+# (CSV header, row key); headers are fixed English so files are language independent.
+SESSION_CSV = [("start", "start"), ("project", "project"), ("session", "id"), ("wall", "wall"),
+               *[(k, k) for k in BUCKET_KEYS], ("idle", "idle"), ("errors", "errors"), ("top", "top")]
+GROUP_CSV = [("group", "key"), ("sessions", "n"), ("active", "active"), *[(k, k) for k in ALL_KEYS]]
 
 
-def export_csv(path, results, L, by=None):
-    """Session rows, or one row per group when `by` is given. Seconds are numbers."""
+def export_csv(path, results, by=None):
+    """Session rows, or one row per group when `by` is given. Seconds are numbers; names in English."""
     if by:
-        rows = group_rows(results, by)
-        return write_csv(path, ("group", "sessions", "active", *ALL_KEYS),
-                         [[row[k] for k in GROUP_CSV] for row in rows])
-    rows = session_rows(results, L)
-    return write_csv(path, ("start", "project", "session", "wall", *BUCKET_KEYS, "idle", "errors", "top"),
-                     [[row[k] for k in SESSION_CSV] for row in rows])
+        cols, rows = GROUP_CSV, group_rows(results, by)
+    else:
+        cols, rows = SESSION_CSV, session_rows(results, labels("en"))
+    return write_csv(path, [h for h, _ in cols], [[row[k] for _, k in cols] for row in rows])
 
 
 def period_text(L, days, since, until):

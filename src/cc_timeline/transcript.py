@@ -62,6 +62,12 @@ def match_agent(ref, agents):
     return None
 
 
+def turn_origin(entry):
+    """Origin marker of an entry; tolerates `origin` being a plain string or other junk."""
+    o = entry.get("origin")
+    return entry.get("turnOrigin") or (o.get("kind") if isinstance(o, dict) else o if isinstance(o, str) else None)
+
+
 def classify(entry, tool_names, agents=None):
     """Return (category, detail); category is model / tool / bg / user / other.
 
@@ -85,14 +91,15 @@ def classify(entry, tool_names, agents=None):
                         agents.append((json.dumps([b.get("content"), entry.get("toolUseResult")],
                                                   ensure_ascii=False), label))
                     return "tool", label
-        origin = entry.get("turnOrigin") or (entry.get("origin") or {}).get("kind")
+        origin = turn_origin(entry)
         if origin == "human":
             return "user", ""
         text = user_text(content).lstrip()
         if origin or text.startswith("<task-notification"):
             kind = ORIGIN_KIND.get(origin, "other")
             base = (kind, origin if kind == "other" else None)
-            ref = (entry.get("origin") or {}).get("from")
+            o = entry.get("origin")
+            ref = o.get("from") if isinstance(o, dict) else None
             if not ref:
                 m = re.search(r"<task-id>([^<]+)</task-id>", text)
                 ref = m and m.group(1).strip()
@@ -137,8 +144,7 @@ def version_key(v):
 def count_format(e, stats):
     """Tally entry type, turn origin and Claude Code version of one raw entry."""
     stats["types"][str(e.get("type"))[:40]] += 1
-    o = e.get("origin")
-    origin = e.get("turnOrigin") or (o.get("kind") if isinstance(o, dict) else None)
+    origin = turn_origin(e)
     if origin:
         stats["origins"][str(origin)[:40]] += 1
     v = e.get("version")
