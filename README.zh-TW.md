@@ -4,7 +4,9 @@
 
 你的 Claude Code session 時間花到哪去了？`cc-timeline` 讀 Claude Code 本來就存在你電腦上的逐字稿，把 session 的每一秒歸到 **模型**、**工具**、**背景等待**（subagent、其他 session、App）、**等你**或**離開**。也能往 subagent 裡面看，各類 agent 的時間花在思考、寫程式碼、讀取、測試還是輪詢。
 
-<!-- screenshot -->
+![Overview: daily allocation and where the time goes](docs/report-overview.png)
+
+![Session timeline: main thread and parallel subagents](docs/report-timeline.png)
 
 ## 跟既有工具有什麼不同
 
@@ -110,6 +112,14 @@ Claude Code 的逐字稿格式沒有公開文件（`turnOrigin`、`queue-operati
 - MCP server 名 → `mcp-1`、`mcp-2`…（server 後面的工具名保留）
 
 效果涵蓋表格、`--by`、`--agents`、`--trace`、HTML、JSON、CSV。它**不會**遮：內建 agent 類型、一般工具名（`Read`、`Bash` 等）、MCP 工具名、時間戳與時長、API 錯誤次數、Claude Code 版本，以及你自己印出來的 `--root` 路徑。
+
+## 開發
+
+```bash
+uv venv && uv pip install -e . pytest && .venv/bin/python -m pytest -q
+```
+
+`docs/` 裡的截圖來自合成資料：`python scripts/make_demo.py /tmp/demo --now 2026-10-30T12:00:00Z`，再執行 `cc-timeline --root /tmp/demo --since 2026-10-22 --html report.html`（時間軸用 `--session 05bde598`），以 headless Chrome 寬 1100px、2 倍解析度截圖（英文介面）。
 
 ## 授權
 

@@ -4,7 +4,9 @@
 
 Where did the time go in your Claude Code sessions? `cc-timeline` reads the transcripts Claude Code already keeps on your machine and attributes every second of a session to **the model**, **tools**, **background waits** (subagents, other sessions, the app), **waiting for you**, or **away**. It can also look inside subagents and show how each agent type splits its time between thinking, writing code, reading, testing and polling.
 
-<!-- screenshot -->
+![Overview: daily allocation and where the time goes](docs/report-overview.png)
+
+![Session timeline: main thread and parallel subagents](docs/report-timeline.png)
 
 ## How is this different?
 
@@ -110,6 +112,14 @@ Use `--redact` before sharing a screenshot, report, JSON or CSV. It replaces:
 - MCP server names with `mcp-1`, `mcp-2`, ... (the tool name after the server is kept)
 
 It applies to the table, `--by`, `--agents`, `--trace`, HTML, JSON and CSV. It does **not** hide built-in agent types, ordinary tool names (`Read`, `Bash`, ...), MCP tool names, timestamps and durations, API error counts, Claude Code versions, or the folder given with `--root` if you print it yourself.
+
+## Development
+
+```bash
+uv venv && uv pip install -e . pytest && .venv/bin/python -m pytest -q
+```
+
+The screenshots in `docs/` come from synthetic data: `python scripts/make_demo.py /tmp/demo --now 2026-10-30T12:00:00Z`, then `cc-timeline --root /tmp/demo --since 2026-10-22 --html report.html` (timeline: `--session 05bde598`), captured with headless Chrome at 1100px width, 2x scale.
 
 ## License
 
