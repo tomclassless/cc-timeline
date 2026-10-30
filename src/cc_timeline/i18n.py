@@ -56,7 +56,7 @@ EN = {
     "by_day": "Day", "by_week": "Week (ISO)", "by_project": "Project", "by_session": "Session",
     "col_n": "N",
     # HTML
-    "period_days": "last {days} days", "period_from": "since {since}",
+    "period_days": "last {days} days", "period_session": "selected session", "period_from": "since {since}",
     "period_until": "until {until}", "period_range": "{since} to {until}",
     "trace_head": "── {gap} {cat} {item} ({start} → {end})",
     "meta": "{project} · {period} · {n} sessions · API errors {errors} · generated {generated}",
@@ -139,7 +139,7 @@ ZH = {
     "csv_written": "CSV 已寫入 {path}",
     "by_day": "日", "by_week": "週（ISO）", "by_project": "專案", "by_session": "Session",
     "col_n": "數量",
-    "period_days": "最近 {days} 天", "period_from": "自 {since} 起",
+    "period_days": "最近 {days} 天", "period_session": "指定的 session", "period_from": "自 {since} 起",
     "period_until": "至 {until} 止", "period_range": "{since} 至 {until}",
     "trace_head": "── {gap} {cat} {item}（{start} → {end}）",
     "meta": "{project} · {period} · {n} 個 session · API 錯誤 {errors} 次 · 產生於 {generated}",

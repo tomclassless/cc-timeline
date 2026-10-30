@@ -115,7 +115,8 @@ def main(argv=None):
 
     if args.html or args.json:
         data = build_report(results, days, args.project, lang, idle_cap, args.redact,
-                            args.since, args.until, args.timeline_sessions)
+                            args.since, args.until, args.timeline_sessions,
+                            session=args.session)
         if args.html:
             out = write_html(data, args.html)
             print(L["report_written"].format(path=out), file=sys.stderr if args.json else sys.stdout)

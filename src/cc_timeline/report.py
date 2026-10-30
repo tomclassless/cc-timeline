@@ -320,7 +320,9 @@ def export_csv(path, results, by=None):
     return write_csv(path, [h for h, _ in cols], [[row[k] for _, k in cols] for row in rows])
 
 
-def period_text(L, days, since, until):
+def period_text(L, days, since, until, session=None):
+    if session:
+        return L["period_session"]
     if since and until:
         return L["period_range"].format(since=since, until=until)
     if since:
@@ -331,7 +333,7 @@ def period_text(L, days, since, until):
 
 
 def build_report(results, days, project, lang, idle_cap, redacted=False, since=None, until=None,
-                timeline_sessions=20):
+                timeline_sessions=20, session=None):
     """Report data; only times, names and ids, never conversation content."""
     L = labels(lang)
     day = lambda ts: f"{ts.astimezone():%Y-%m-%d}"
@@ -374,7 +376,7 @@ def build_report(results, days, project, lang, idle_cap, redacted=False, since=N
         "labels": L,
         "generated": f"{datetime.now():%Y-%m-%d %H:%M}",
         "days": days, "since": since and str(since), "until": until and str(until),
-        "period": period_text(L, days, since, until), "project": shown,
+        "period": period_text(L, days, since, until, session), "project": shown,
         "sessionCount": len(results),
         "apiErrors": agg["api_errors"],
         "format": fmt_summary, "formatWarning": format_warning(L, fmt_summary),

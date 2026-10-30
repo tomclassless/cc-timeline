@@ -663,3 +663,11 @@ def test_csv_is_language_independent(tmp_path):
         cli.main(["--root", str(tmp_path), *ALL, "--csv", str(out), "--lang", lang])
         paths.append(out.read_text(encoding="utf-8"))
     assert paths[0] == paths[1] and ",Read" in paths[0]
+
+
+def test_session_report_period_label(tmp_path):
+    from cc_timeline.i18n import labels
+    from cc_timeline.report import period_text
+    L = labels("en")
+    assert period_text(L, 7, None, None, session="abc") == L["period_session"]
+    assert period_text(L, 7, None, None) == "last 7 days"

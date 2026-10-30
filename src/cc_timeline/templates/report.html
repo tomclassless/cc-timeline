@@ -189,6 +189,10 @@ function hover(node, html) {
   });
   node.addEventListener("mouseleave", () => tip.style.display = "none");
 }
+// Agent phases in the validated categorical order, so think = model (s1), read = tool (s2),
+// test = s5 and polling = s7 match the session timeline.
+const AGENT_ORDER = ["think", "read", "code", "gen", "test", "other", "poll"]
+  .filter(g => D.phaseGroups.includes(g)).concat(D.phaseGroups.filter(g => !["think", "read", "code", "gen", "test", "other", "poll"].includes(g)));
 function legend(id, names) {
   document.getElementById(id).innerHTML = names.map((n, i) =>
     `<span><i class="sw" style="background:${C(i)}"></i>${esc(n)}</span>`).join("");
@@ -363,7 +367,7 @@ function drawAgents() {
     const yy = i * row + 6, total = sum(Object.values(a.phases));
     el("text", {x: lw - 10, y: yy + 13, "text-anchor": "end", class: "ink"}, s).textContent = a.type;
     el("text", {x: lw - 10, y: yy + 28, "text-anchor": "end"}, s).textContent = tpl("runs", {n: a.runs});
-    const segs = D.phaseGroups.map((g, j) => [g, j, a.phases[g] || 0]).filter(([, , v]) => v > 0);
+    const segs = AGENT_ORDER.map((g, j) => [g, j, a.phases[g] || 0]).filter(([, , v]) => v > 0);
     let x = lw;
     segs.forEach(([g, j, v], idx) => {
       const last = idx === segs.length - 1, w = bwMax * v / total;
@@ -375,7 +379,7 @@ function drawAgents() {
     el("text", {x: lw + bwMax + 8, y: yy + 28}, s).textContent = tpl("total_x", {t: fmt(total)});
   });
 }
-legend("agentsLegend", D.phaseGroups.map(G));
+legend("agentsLegend", AGENT_ORDER.map(G));
 table("agentsTable", [L.h_agent, L.h_runs, L.h_avg, ...D.phaseGroups.map(G)],
   D.agents.map(a => { const t = sum(Object.values(a.phases));
     return [a.type, a.runs, fmt(t / a.runs), ...D.phaseGroups.map(g => `${fmt(a.phases[g] || 0)}（${pct(a.phases[g] || 0, t)}）`)]; }));
