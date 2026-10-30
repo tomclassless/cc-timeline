@@ -49,7 +49,9 @@ def build_parser():
     ap = argparse.ArgumentParser(
         prog="cc-timeline",
         description="Where did the time go in your Claude Code sessions? "
-                    "Reads local transcripts; only timestamps, event types and tool names are used.")
+                    "Reads local transcripts; only timestamps, event types and tool names are used.",
+        epilog="subcommands (as the first argument): mcp, compare, quality; "
+               "see `cc-timeline <subcommand> --help`")
     ap.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     ap.add_argument("--days", type=float, default=None,
                     help=f"only the last N days (default {DEFAULT_DAYS}); ignored when --since is given")
@@ -87,7 +89,74 @@ def build_parser():
     return ap
 
 
+SUBCOMMANDS = ("mcp", "compare", "quality")
+
+
+def parse_range(text):
+    since, sep, until = text.partition(":")
+    if not sep:
+        raise argparse.ArgumentTypeError(f"expected SINCE:UNTIL (YYYY-MM-DD:YYYY-MM-DD), got {text!r}")
+    return {"since": str(parse_day(since)), "until": str(parse_day(until))}
+
+
+def sub_parser(name):
+    ap = argparse.ArgumentParser(prog=f"cc-timeline {name}")
+    ap.add_argument("--root", type=Path, default=None,
+                    help="transcripts root (default: $CLAUDE_CONFIG_DIR/projects or ~/.claude/projects)")
+    if name == "mcp":
+        ap.description = "Run the MCP server (stdio). Tools return only aggregate numbers, names and ids."
+        return ap
+    ap.add_argument("--project", help="project folder name contains this text")
+    ap.add_argument("--redact", action="store_true", help="replace project names and custom agent types")
+    ap.add_argument("--json", action="store_true", help="print the data as JSON")
+    ap.add_argument("--lang", choices=["en", "zh-TW"], default=None,
+                    help="output language (default: $CC_TIMELINE_LANG or en)")
+    if name == "compare":
+        ap.description = "Compare two periods: time allocation, agent internals and quality signals."
+        ap.add_argument("--before", type=parse_range, required=True, metavar="SINCE:UNTIL")
+        ap.add_argument("--after", type=parse_range, required=True, metavar="SINCE:UNTIL")
+    else:
+        ap.description = "Quality signals: reports per dispatch, test failures, API errors, polling share."
+        ap.add_argument("--days", type=float, default=None, help=f"only the last N days (default {DEFAULT_DAYS})")
+        ap.add_argument("--since", type=parse_day, metavar="YYYY-MM-DD")
+        ap.add_argument("--until", type=parse_day, metavar="YYYY-MM-DD")
+    return ap
+
+
+def run_subcommand(name, argv):
+    args = sub_parser(name).parse_args(argv)
+    root = (args.root or default_root()).expanduser()
+    if name == "mcp":
+        from .mcp import run_stdio
+        return run_stdio(root)
+    from . import queries, render
+    lang = resolve_lang(args.lang)
+    L = labels(lang)
+    try:
+        if name == "compare":
+            data = queries.compare(root, args.before, args.after, args.project, args.redact)
+            empty = not (data["before"]["sessions"] or data["after"]["sessions"])
+        else:
+            data = queries.quality_signals(root, args.days, args.since and str(args.since),
+                                           args.until and str(args.until), args.project, args.redact)
+            empty = not data["sessions"]
+    except queries.ParamError as e:
+        sys.exit(f"cc-timeline {name}: error: {e}")
+    if empty:
+        sys.exit(L["no_sessions"])
+    if args.json:
+        print(to_json(data))
+    elif name == "compare":
+        render.print_compare(data, lang)
+    else:
+        render.print_quality(data, lang)
+    return 0
+
+
 def main(argv=None):
+    argv = sys.argv[1:] if argv is None else list(argv)
+    if argv and argv[0] in SUBCOMMANDS:
+        return run_subcommand(argv[0], argv[1:])
     args = build_parser().parse_args(argv)
     lang = resolve_lang(args.lang)
     L = labels(lang)

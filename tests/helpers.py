@@ -37,9 +37,11 @@ class Session:
     def thinking(self, t, mid="m1"):
         return self.assistant(t, {"type": "thinking", "thinking": "..."}, mid=mid)
 
-    def tool_result(self, t, tid, content="ok", **kw):
-        return self.raw(t, "user", message={"role": "user", "content": [
-            {"type": "tool_result", "tool_use_id": tid, "content": content}]}, **kw)
+    def tool_result(self, t, tid, content="ok", is_error=None, **kw):
+        block = {"type": "tool_result", "tool_use_id": tid, "content": content}
+        if is_error is not None:
+            block["is_error"] = is_error
+        return self.raw(t, "user", message={"role": "user", "content": [block]}, **kw)
 
     def write(self, root, project="-Users-x-proj", sid="11111111-aaaa"):
         d = Path(root) / project

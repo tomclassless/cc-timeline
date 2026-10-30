@@ -92,6 +92,24 @@ EN = {
     "h_time": "Total time", "h_avg": "Avg", "h_agent": "Agent", "h_runs": "Runs",
     "h_start": "Start", "h_project": "Project", "h_session": "session", "h_wall": "Total",
     "h_errors": "API errors", "h_top": "Top item",
+    # compare / quality
+    "cmp_before": "Before", "cmp_after": "After", "cmp_sessions": "sessions", "cmp_runs": "runs",
+    "cmp_buckets": "Time buckets (share of busy time, then seconds)",
+    "cmp_agents": "Agent internals (average per run, phase shares)",
+    "cmp_quality": "Quality signals", "cmp_notes": "Note",
+    "cmp_test_rate": "Test failure rate", "cmp_api": "API errors",
+    "cmp_executor": "Executor dispatches per session", "cmp_poll": "Sleep polling share of agent time",
+    "q_head": "Quality signals ({n} sessions)",
+    "q_ratio_hdr": "Reports per dispatch (high = many re-review rounds):",
+    "q_dispatched": "dispatched", "q_reported": "reported", "q_ratio": "reports/dispatch",
+    "q_tests": "Test tool failures: {fails} / {calls} ({rate})",
+    "q_api": "API errors: {n}",
+    "q_executor": "Executor dispatches per session: {v}",
+    "q_poll": "Sleep polling share of agent time: {v}",
+    "note_small": "Sample too small: the {which} period has {n} sessions (fewer than {min}); treat differences as noise.",
+    "note_unbalanced": "The periods differ a lot in size ({before} vs {after} sessions); compare shares, not totals.",
+    "note_no_sessions": "No sessions matched this period.",
+    "note_no_is_error": "No tool result carried an is_error field, so test failures are counted as 0.",
 }
 
 ZH = {
@@ -174,6 +192,23 @@ ZH = {
     "h_time": "總時間", "h_avg": "平均", "h_agent": "Agent", "h_runs": "次數",
     "h_start": "開始", "h_project": "專案", "h_session": "session", "h_wall": "總時長",
     "h_errors": "API 錯誤", "h_top": "最耗時項目",
+    "cmp_before": "調整前", "cmp_after": "調整後", "cmp_sessions": "個 session", "cmp_runs": "次數",
+    "cmp_buckets": "時間分配（占活躍時間的比例，其後為秒數）",
+    "cmp_agents": "Agent 內部（每次平均時長、各 phase 占比）",
+    "cmp_quality": "品質指標", "cmp_notes": "註",
+    "cmp_test_rate": "測試失敗率", "cmp_api": "API 錯誤次數",
+    "cmp_executor": "每個 session 派出 executor 次數", "cmp_poll": "sleep 輪詢占 agent 時間",
+    "q_head": "品質指標（{n} 個 session）",
+    "q_ratio_hdr": "回報次數 ÷ 派出次數（偏高代表重審輪數多）：",
+    "q_dispatched": "派出", "q_reported": "回報", "q_ratio": "回報÷派出",
+    "q_tests": "測試類工具失敗：{fails} / {calls}（{rate}）",
+    "q_api": "API 錯誤：{n} 次",
+    "q_executor": "每個 session 派出 executor 次數：{v}",
+    "q_poll": "sleep 輪詢占 agent 內部時間：{v}",
+    "note_small": "樣本不足：{which}期間只有 {n} 個 session（少於 {min}），差異可能只是雜訊。",
+    "note_unbalanced": "兩期樣本數差距大（{before} 對 {after} 個 session），請比較占比而非總量。",
+    "note_no_sessions": "這段期間沒有符合的 session。",
+    "note_no_is_error": "沒有任何 tool result 帶 is_error 欄位，測試失敗次數以 0 計。",
 }
 
 LANGS = {"en": EN, "zh-TW": ZH}
