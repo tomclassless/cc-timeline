@@ -187,7 +187,7 @@ function empty(id, msg) { document.getElementById(id).innerHTML = `<div class="e
 // -- header and tiles --
 const T = D.totals, busy = sum(BUCKETS.map(([k]) => T[k] || 0));
 document.getElementById("meta").textContent =
-  tpl("meta", {project: D.project, days: D.days, n: D.sessionCount, errors: D.apiErrors, generated: D.generated});
+  tpl("meta", {project: D.project, period: D.period, n: D.sessionCount, errors: D.apiErrors, generated: D.generated});
 document.getElementById("tiles").innerHTML =
   `<div class="tile"><div class="label">${esc(L.tile_active)}</div><div class="value">${fmt(busy)}</div>
      <div class="note">${esc(tpl("tile_idle", {t: fmt(T.idle || 0)}))}</div></div>` +

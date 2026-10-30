@@ -1,7 +1,7 @@
 """Command line entry point."""
 import argparse
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 
 from . import __version__
@@ -11,6 +11,31 @@ from .report import (build_report, print_agents, print_detail, print_summary, pr
 from .transcript import analyze, default_root, find_sessions
 
 DEFAULT_REPORT = Path("cc-timeline-report.html")
+DEFAULT_DAYS = 7
+
+
+def parse_day(text):
+    try:
+        return datetime.strptime(text, "%Y-%m-%d").date()
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"expected YYYY-MM-DD, got {text!r}")
+
+
+def local_midnight(d):
+    return datetime.combine(d, time.min).astimezone()
+
+
+def date_range(args, now=None):
+    """(lo, hi) as aware datetimes (either may be None); hi is exclusive. Local time zone."""
+    now = now or datetime.now().astimezone()
+    if args.since:
+        lo = local_midnight(args.since)
+    elif args.days is not None or not args.until:
+        lo = now - timedelta(days=DEFAULT_DAYS if args.days is None else args.days)
+    else:
+        lo = None
+    hi = local_midnight(args.until + timedelta(days=1)) if args.until else None
+    return lo, hi
 
 
 def build_parser():
@@ -19,7 +44,12 @@ def build_parser():
         description="Where did the time go in your Claude Code sessions? "
                     "Reads local transcripts; only timestamps, event types and tool names are used.")
     ap.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
-    ap.add_argument("--days", type=float, default=7, help="only the last N days (default 7)")
+    ap.add_argument("--days", type=float, default=None,
+                    help=f"only the last N days (default {DEFAULT_DAYS}); ignored when --since is given")
+    ap.add_argument("--since", type=parse_day, metavar="YYYY-MM-DD",
+                    help="only sessions that started on or after this local date")
+    ap.add_argument("--until", type=parse_day, metavar="YYYY-MM-DD",
+                    help="only sessions that started on or before this local date (inclusive)")
     ap.add_argument("--project", help="project folder name contains this text")
     ap.add_argument("--session", help="session id prefix; prints a detailed breakdown")
     ap.add_argument("--idle-cap", type=float, default=30,
@@ -36,7 +66,8 @@ def build_parser():
     ap.add_argument("--open", action="store_true", help="with --html: open the report in a browser")
     ap.add_argument("--json", action="store_true", help="print report data as JSON to stdout")
     ap.add_argument("--redact", action="store_true",
-                    help="replace project names and session ids (safe to share screenshots)")
+                    help="replace project names, session ids, custom agent types and MCP server "
+                         "names (safe to share screenshots)")
     ap.add_argument("--lang", choices=["en", "zh-TW"], default=None,
                     help="output language (default: $CC_TIMELINE_LANG or en)")
     return ap
@@ -49,9 +80,15 @@ def main(argv=None):
     root = (args.root or default_root()).expanduser()
     idle_cap = args.idle_cap * 60
 
-    since = datetime.now(timezone.utc) - timedelta(days=args.days)
-    files = find_sessions(root, args.project, args.session, since)
+    lo, hi = date_range(args)
+    days = DEFAULT_DAYS if args.days is None else args.days
+    if args.since or args.until:
+        days = None
+    files = find_sessions(root, args.project, args.session, lo and lo.astimezone(timezone.utc))
     results = [r for r in (analyze(p, idle_cap) for p in files) if r]
+    if not args.session:
+        # Exact filter on the session's first timestamp (mtime above was only a pre-screen).
+        results = [r for r in results if (lo is None or r["start"] >= lo) and (hi is None or r["start"] < hi)]
     if not results:
         sys.exit(L["no_sessions"])
     results.sort(key=lambda r: r["start"])
@@ -59,7 +96,8 @@ def main(argv=None):
         redact(results)
 
     if args.html or args.json:
-        data = build_report(results, args.days, args.project, lang, idle_cap, args.redact)
+        data = build_report(results, days, args.project, lang, idle_cap, args.redact,
+                            args.since, args.until)
         if args.html:
             out = write_html(data, args.html)
             print(L["report_written"].format(path=out), file=sys.stderr if args.json else sys.stdout)

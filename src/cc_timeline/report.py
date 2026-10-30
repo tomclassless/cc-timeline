@@ -1,6 +1,7 @@
 """Build report data and render it as CLI text, JSON or HTML."""
 import hashlib
 import json
+import re
 import sys
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -8,10 +9,13 @@ from pathlib import Path
 
 from .agents import PHASE_GROUPS, agent_files, analyze_agent, phase_group
 from .i18n import agent_name, item_name, labels
-from .transcript import TRACE_VALUE_KEYS, parse_ts, shape
+from .transcript import TRACE_VALUE_KEYS, parse_ts, shape, trace_value
 
 TEMPLATE = Path(__file__).parent / "templates" / "report.html"
 BUCKET_KEYS = ("model", "tool", "bg", "user")
+BUILTIN_AGENTS = {"general-purpose", "Explore", "Plan", "statusline-setup", "claude-code-guide"}
+_AGENT_LABEL = re.compile(r"(Agent|Task)\((.*)\)", re.S)
+_MCP_LABEL = re.compile(r"mcp:([^…]*)…(.*)", re.S)
 
 
 def fmt(sec):
@@ -29,20 +33,78 @@ def pct(part, whole):
     return f"{part / whole * 100:4.0f}%" if whole else "   -"
 
 
+class Scrubber:
+    """Maps custom agent types to agent-N and MCP server names to mcp-N (stable per run)."""
+
+    def __init__(self):
+        self.agents = {}
+        self.mcps = {}
+
+    def __call__(self, label):
+        if not isinstance(label, str):
+            return label
+        m = _AGENT_LABEL.fullmatch(label)
+        if m:
+            kind, name = m.groups()
+            if name not in BUILTIN_AGENTS:
+                name = self.agents.setdefault(name, f"agent-{len(self.agents) + 1}")
+            return f"{kind}({name})"
+        m = _MCP_LABEL.fullmatch(label)
+        if m:
+            return f"mcp:{self._mcp(m.group(1))}…{m.group(2)}"
+        if label.startswith("mcp__"):
+            parts = label.split("__", 2)
+            parts[1] = self._mcp(parts[1])
+            return "__".join(parts)
+        return label
+
+    def _mcp(self, name):
+        return self.mcps.setdefault(name, f"mcp-{len(self.mcps) + 1}")
+
+    def key(self, key):
+        if isinstance(key, tuple):
+            return tuple(self.key(k) for k in key)
+        return self(key)
+
+
 def redact(results):
-    """Replace project names with project-N and session ids with a hash prefix (in place)."""
+    """Replace project names, session ids, custom agent types and MCP server names (in place).
+
+    Tool names, built-in agent types and all timings are kept.
+    """
     names = {}
+    scrub = Scrubber()
     for r in results:
         r["project"] = names.setdefault(r["project"], f"project-{len(names) + 1}")
         r["id"] = hashlib.sha256(r["id"].encode("utf-8")).hexdigest()[:8]
+        tools, calls = defaultdict(float), defaultdict(int)
+        for k, v in r["tools"].items():
+            tools[scrub.key(k)] += v
+        for k, v in r["tool_calls"].items():
+            calls[scrub.key(k)] += v
+        r["tools"], r["tool_calls"] = tools, calls
+        r["steps"] = [(g, c, scrub.key(d), t, tr) for g, c, d, t, tr in r["steps"]]
+        r["agent_corpus"] = [(text, scrub(label)) for text, label in r["agent_corpus"]]
+        r["scrub"] = scrub
     return results
 
 
 def agent_runs(r):
-    return agent_files(r["path"], r["agent_corpus"])
+    scrub = r.get("scrub") or (lambda label: label)
+    return [(scrub(label), f) for label, f in agent_files(r["path"], r["agent_corpus"])]
 
 
-def build_report(results, days, project, lang, idle_cap, redacted=False):
+def period_text(L, days, since, until):
+    if since and until:
+        return L["period_range"].format(since=since, until=until)
+    if since:
+        return L["period_from"].format(since=since)
+    if until:
+        return L["period_until"].format(until=until)
+    return L["period_days"].format(days=f"{days:g}")
+
+
+def build_report(results, days, project, lang, idle_cap, redacted=False, since=None, until=None):
     """Report data; only times, names and ids, never conversation content."""
     L = labels(lang)
     day = lambda ts: f"{ts.astimezone():%Y-%m-%d}"
@@ -95,7 +157,8 @@ def build_report(results, days, project, lang, idle_cap, redacted=False):
         "lang": lang,
         "labels": L,
         "generated": f"{datetime.now():%Y-%m-%d %H:%M}",
-        "days": days, "project": shown,
+        "days": days, "since": since and str(since), "until": until and str(until),
+        "period": period_text(L, days, since, until), "project": shown,
         "sessionCount": len(results),
         "apiErrors": sum(r["api_errors"] for r in results),
         "totals": dict(totals),
@@ -212,11 +275,12 @@ def print_trace(r, lang, n):
     L = labels(lang)
     for gap, cat, detail, ts, _ in sorted(r["steps"], key=lambda s: -s[0])[:n]:
         start = ts - timedelta(seconds=gap)
-        print(f"\n── {fmt(gap)} {cat} {item_name(L, detail)[:40]}"
-              f"（{start.astimezone():%H:%M:%S} → {ts.astimezone():%H:%M:%S}）")
+        print("\n" + L["trace_head"].format(
+            gap=fmt(gap), cat=cat, item=item_name(L, detail)[:40],
+            start=f"{start.astimezone():%H:%M:%S}", end=f"{ts.astimezone():%H:%M:%S}"))
         for e in r["entries"]:
             t = parse_ts(e["timestamp"])
             if start - timedelta(seconds=5) <= t <= ts + timedelta(seconds=5):
-                vals = " ".join(f"{k}={json.dumps(e[k], ensure_ascii=False)[:60]}"
+                vals = " ".join(f"{k}={trace_value(k, e[k])}"
                                 for k in TRACE_VALUE_KEYS if k in e)
                 print(f"   {(t - start).total_seconds():+8.1f}s  {shape(e):<32} {vals}")

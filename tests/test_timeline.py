@@ -1,4 +1,5 @@
 import json
+import os
 import re
 
 import pytest
@@ -8,9 +9,11 @@ from cc_timeline import cli
 from cc_timeline.agents import agent_files, analyze_agent, phase_group
 from cc_timeline.bash import bash_phase
 from cc_timeline.i18n import item_name, labels
-from cc_timeline.transcript import analyze, default_root, find_sessions
+from cc_timeline.transcript import analyze, default_root, find_sessions, shape, trace_value
 
 CAP = 1800
+# Fixtures live in 2026-01; open the date window so tests do not depend on today.
+ALL = ["--since", "2000-01-01"]
 
 
 def run(sess, tmp_path, **kw):
@@ -228,31 +231,12 @@ def secret_root(tmp_path):
     return tmp_path
 
 
-def test_redact_everywhere(tmp_path, capsys):
-    root = secret_root(tmp_path)
-    out = tmp_path / "r.html"
-    for extra in (["--json"], [], ["--session", "deadbeef"], ["--html", str(out)], ["--agents"]):
-        capsys.readouterr()
-        try:
-            cli.main(["--root", str(root), "--redact", *extra])
-        except SystemExit:
-            pass
-        text = capsys.readouterr().out + (out.read_text(encoding="utf-8") if extra[:1] == ["--html"] else "")
-        assert "secretproj" not in text and "deadbeef" not in text, extra
-    capsys.readouterr()
-    cli.main(["--root", str(root), "--redact", "--json"])
-    data = json.loads(capsys.readouterr().out)
-    assert data["sessions"][0]["project"] == "project-1"
-    assert re.fullmatch(r"[0-9a-f]{8}", data["sessions"][0]["id"])
-    assert "labels" not in data
-
-
 @pytest.mark.parametrize("lang,needle", [("en", "Daily time allocation"), ("zh-TW", "每日時間分配")])
 def test_html_languages_and_script_escape(tmp_path, capsys, lang, needle):
     s = Session().user(0).tool_use(2, "t1", "mcp__srv__</script><b>x").tool_result(12, "t1")
     s.write(tmp_path)
     out = tmp_path / "x.html"
-    cli.main(["--root", str(tmp_path), "--html", str(out), "--lang", lang])
+    cli.main(["--root", str(tmp_path), *ALL, "--html", str(out), "--lang", lang])
     html = out.read_text(encoding="utf-8")
     assert f'<html lang="{lang}">' in html
     assert html.count("</script>") == 2
@@ -268,7 +252,7 @@ def test_cli_modes(tmp_path, capsys, monkeypatch):
     path = secret_root(tmp_path)
     Session(sidechain=True).user(0).thinking(4).assistant(9).write_agent(
         next(path.glob("*/*.jsonl")), "a1", "explorer")
-    base = ["--root", str(path)]
+    base = ["--root", str(path), *ALL]
     cli.main(base)
     assert "Read" in capsys.readouterr().out
     cli.main([*base, "--session", "deadbeef", "--trace", "2"])
@@ -284,3 +268,123 @@ def test_cli_modes(tmp_path, capsys, monkeypatch):
 def test_no_sessions_exits(tmp_path):
     with pytest.raises(SystemExit):
         cli.main(["--root", str(tmp_path)])
+
+
+# ── privacy ──
+
+def test_shape_keeps_only_tag_name():
+    e = Session().user(0, '<div class="x">secret').rows[0]
+    assert shape(e) == "user:<div"
+    e = Session().user(0, "<task-notification>done</task-notification>").rows[0]
+    assert shape(e) == "user:<task-notification"
+    e = Session().user(0, "<" + "a" * 50).rows[0]
+    assert shape(e) == "user:<" + "a" * 29
+
+
+def test_trace_reason_free_text_is_masked(tmp_path, capsys):
+    assert trace_value("reason", "free text secret") == '"<text>"'
+    assert trace_value("reason", "Has-Upper") == '"<text>"'
+    assert trace_value("reason", "stop_sequence") == '"stop_sequence"'
+    assert trace_value("operation", "enqueue") == '"enqueue"'
+    s = Session().user(0).tool_use(2, "t1", "Read")
+    s.raw(5, "system", reason="my private words")
+    s.tool_result(12, "t1").write(tmp_path, sid="abcd1234-x")
+    cli.main(["--root", str(tmp_path), "--session", "abcd", "--trace", "2"])
+    out = capsys.readouterr().out
+    assert "private" not in out and '"<text>"' in out
+
+
+def redact_root(tmp_path):
+    s = (Session(cwd="/Users/x/secretproj").user(0)
+         .tool_use(1, "tu1", "Agent", {"subagent_type": "secretagent"})
+         .tool_result(2, "tu1", "agentId: abc12345678 started")
+         .tool_use(3, "tu2", "Agent", {"subagent_type": "Explore"})
+         .tool_result(4, "tu2", "agentId: builtin99999 started")
+         .tool_use(5, "t2", "mcp__secretsrv__dostuff").tool_result(9, "t2")
+         .user(20, "x", origin={"kind": "task_notification", "from": "abc12345678"}))
+    main = s.write(tmp_path, project="-Users-x-secretproj", sid="deadbeef-1234-5678")
+    a = Session(sidechain=True).user(0).thinking(4).assistant(9)
+    a.write_agent(main, "abc12345678", "secretagent")
+    a.write_agent(main, "builtin99999", "Explore")
+    return tmp_path
+
+
+REDACT_SECRETS = ("secretproj", "deadbeef", "secretagent", "secretsrv")
+
+
+def redact_outputs(root, tmp_path, capsys):
+    out = tmp_path / "r.html"
+    argsets = [[], ["--json"], ["--agents"], ["--session", "deadbeef", "--trace", "5"],
+               ["--html", str(out)]]
+    for extra in argsets:
+        capsys.readouterr()
+        cli.main(["--root", str(root), *ALL, "--redact", *extra])
+        text = capsys.readouterr().out
+        if out.exists():
+            text += out.read_text(encoding="utf-8")
+        yield extra, text
+
+
+def test_redact_everywhere(tmp_path, capsys):
+    root = redact_root(tmp_path)
+    seen = []
+    for extra, text in redact_outputs(root, tmp_path, capsys):
+        for secret in REDACT_SECRETS:
+            assert secret not in text, (extra, secret)
+        seen.append(text)
+    joined = "\n".join(seen)
+    assert "Agent(agent-1)" in joined and "mcp-1" in joined and "dostuff" in joined
+    assert "Agent(Explore)" in joined
+    capsys.readouterr()
+    cli.main(["--root", str(root), *ALL, "--redact", "--json"])
+    data = json.loads(capsys.readouterr().out)
+    assert data["sessions"][0]["project"] == "project-1"
+    assert re.fullmatch(r"[0-9a-f]{8}", data["sessions"][0]["id"])
+    assert "labels" not in data
+    assert {a["type"] for a in data["agents"]} == {"Agent(agent-1)", "Agent(Explore)"}
+
+
+# ── date range ──
+
+def test_since_until_use_first_timestamp_not_mtime(tmp_path, capsys):
+    # Jan 1 session: its file mtime is "now" (inside --days), but it started outside the range.
+    Session().user(0).assistant(5).write(tmp_path, sid="aaaa0000-x")
+    mar = 59 * 86400 + 12 * 3600  # 2026-03-01 12:00 UTC
+    Session().user(mar).assistant(mar + 5).write(tmp_path, sid="bbbb0000-x")
+    base = ["--root", str(tmp_path), "--json"]
+
+    def ids(*a):
+        cli.main([*base, *a])
+        return [x["id"] for x in json.loads(capsys.readouterr().out)["sessions"]]
+
+    assert ids("--since", "2026-02-28", "--until", "2026-03-02") == ["bbbb0000"]
+    assert ids("--since", "2025-12-31", "--until", "2026-01-02") == ["aaaa0000"]
+    assert sorted(ids("--since", "2020-01-01")) == ["aaaa0000", "bbbb0000"]
+    assert ids("--until", "2026-01-02") == ["aaaa0000"]  # --until alone has no lower bound
+    # --since wins over --days
+    assert sorted(ids("--since", "2020-01-01", "--days", "1")) == ["aaaa0000", "bbbb0000"]
+    # --session ignores the range
+    assert ids("--session", "aaaa", "--since", "2030-01-01") == ["aaaa0000"]
+    # period text
+    cli.main([*base, "--since", "2020-01-01", "--until", "2026-12-31"])
+    assert json.loads(capsys.readouterr().out)["period"] == "2020-01-01 to 2026-12-31"
+
+
+def test_days_default_filters_old_sessions(tmp_path):
+    Session().user(0).assistant(5).write(tmp_path, sid="aaaa0000-x")  # starts 2026-01-01
+    assert cli.main(["--root", str(tmp_path), "--days", "1000"]) == 0
+    with pytest.raises(SystemExit):
+        cli.main(["--root", str(tmp_path), "--days", "1"])
+
+
+def test_mtime_is_only_a_prescreen(tmp_path):
+    p = Session().user(0).assistant(5).write(tmp_path)
+    os.utime(p, (1_000_000_000, 1_000_000_000))  # 2001
+    from datetime import datetime, timezone
+    assert find_sessions(tmp_path, since=datetime(2020, 1, 1, tzinfo=timezone.utc)) == []
+    assert find_sessions(tmp_path, since=datetime(2000, 1, 1, tzinfo=timezone.utc)) == [p]
+
+
+def test_bad_date_is_rejected(tmp_path):
+    with pytest.raises(SystemExit):
+        cli.main(["--root", str(tmp_path), "--since", "01/02/2026"])

@@ -116,7 +116,8 @@ def shape(entry):
         kind = "text"
     text = user_text(content).lstrip() if t == "user" else ""
     if text.startswith("<"):
-        kind = text[:text.find(">") + 1][:30] if ">" in text[:40] else "<…"
+        # Tag name only: never attributes or content.
+        kind = re.match(r"<[^\s>]*", text).group()[:30]
     sub = entry.get("subtype") or (entry.get("attachment") or {}).get("type")
     if isinstance(sub, str):
         kind = sub[:30]
@@ -218,7 +219,11 @@ def default_root():
 
 
 def find_sessions(root, project=None, session=None, since=None):
-    """Main-session transcripts under root/<project-dir>/*.jsonl (subagents/ are deeper, so skipped)."""
+    """Main-session transcripts under root/<project-dir>/*.jsonl (subagents/ are deeper, so skipped).
+
+    `since` is only a cheap pre-screen on file mtime: a file last written before `since`
+    cannot hold a session that started after it. The exact filter uses the first timestamp.
+    """
     needle = re.sub(r"[^A-Za-z0-9]", "-", project) if project else None
     found = []
     for p in sorted(root.glob("*/*.jsonl")):
@@ -237,3 +242,12 @@ def find_sessions(root, project=None, session=None, since=None):
 TRACE_VALUE_KEYS = ["isMeta", "origin", "promptSource", "turnOrigin", "turnPosition",
                     "operation", "reason", "querySource", "preventedContinuation",
                     "apiErrorStatus", "isApiErrorMessage"]
+
+REASON_RE = re.compile(r"[a-z0-9_]{1,40}")
+
+
+def trace_value(key, value):
+    """Printable form of a TRACE_VALUE_KEYS field; free-text `reason` values are masked."""
+    if key == "reason" and not (isinstance(value, str) and REASON_RE.fullmatch(value)):
+        return '"<text>"'
+    return json.dumps(value, ensure_ascii=False)[:60]
