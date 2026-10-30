@@ -7,6 +7,7 @@ import argparse
 import re
 from collections import Counter, defaultdict
 from datetime import timezone
+from pathlib import Path
 from types import SimpleNamespace
 
 from .agents import PHASE_GROUPS, phase_group
@@ -82,8 +83,16 @@ def load_results(root, project=None, days=None, since=None, until=None, redact_n
 # ── building blocks ──
 
 def agent_type_of(label):
+    """Normalized agent name as shown by the CLI: Agent(type); 'unmatched' when unknown."""
     m = AGENT_RE.fullmatch(label) if label else None
-    return m.group(1) if m else (label or "unmatched")
+    if m:
+        return f"Agent({m.group(1)})"
+    return label or "unmatched"
+
+
+def agent_filter(value):
+    """Accept `reviewer` or `Agent(reviewer)`."""
+    return agent_type_of(value if AGENT_RE.fullmatch(value) else f"Agent({value})")
 
 
 def bucket_block(results):
@@ -103,7 +112,7 @@ def top_items(results, n, L):
 
 
 def agent_block(results, idle_cap=IDLE_CAP, agent_type=None):
-    want = agent_type_of(agent_type) if agent_type else None
+    want = agent_filter(agent_type) if agent_type else None
     by = {}
     for r in results:
         for run in agent_runs(r, idle_cap):
@@ -169,9 +178,8 @@ def quality_block(results, idle_cap=IDLE_CAP):
                     raw = str((b.get("input") or {}).get("subagent_type") or "general-purpose")
                     executors += "executor" in raw.lower()
                     dispatched[agent_type_of(scrub(f"Agent({raw})"))] += 1
-        for key, n in r["tool_calls"].items():
-            if isinstance(key, tuple) and key[0] == "agent":
-                reported[agent_type_of(key[1])] += n
+        for label, n in r["agent_reports"].items():
+            reported[agent_type_of(scrub(label))] += n
         add_tests(r["entries"])
         for run in agent_runs(r, idle_cap):
             agent_time += sum(run["phases"].values())
@@ -257,12 +265,26 @@ def quality_signals(root, days=None, since=None, until=None, project=None, redac
 
 
 def current_session_path(root, cwd):
-    folder = root / re.sub(r"[^A-Za-z0-9]", "-", str(cwd))
-    files = sorted(folder.glob("*.jsonl"), key=lambda p: p.stat().st_mtime) if folder.is_dir() else []
-    if not files:
-        raise QueryError(f"No session folder found for the server's working directory ({folder.name}) "
-                         f"under the transcripts root. Pass a session id prefix instead.")
-    return files[-1]
+    """Latest session file of the folder Claude Code names after cwd (resolved path first, then as given)."""
+    names = []
+    for c in (_resolved(cwd), str(cwd)):
+        name = re.sub(r"[^A-Za-z0-9]", "-", c)
+        if name not in names:
+            names.append(name)
+    for name in names:
+        folder = root / name
+        files = sorted(folder.glob("*.jsonl"), key=lambda p: p.stat().st_mtime) if folder.is_dir() else []
+        if files:
+            return files[-1]
+    raise QueryError(f"No session folder found for the server's working directory ({names[0]}) "
+                     f"under the transcripts root. Pass a session id prefix instead.")
+
+
+def _resolved(cwd):
+    try:
+        return str(Path(cwd).resolve())
+    except (OSError, RuntimeError):
+        return str(cwd)
 
 
 def session_timeline(root, session, cwd=None, redact_names=False, idle_cap=IDLE_CAP):

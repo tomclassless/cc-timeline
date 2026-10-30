@@ -149,10 +149,10 @@ claude mcp add cc-timeline -- uvx --from git+https://github.com/tomclassless/cc-
 Use `cc-timeline mcp --root PATH` to read transcripts from somewhere other than `~/.claude/projects`. Tools (all take `redact: true` to hide project names, session ids and custom agent types):
 
 - `summary`: time share of model / tools / background / waiting for you, top items, session and API error counts; optional `by` day, week, project or session.
-- `agent_phases`: per agent type, run count, average duration and the share of thinking, coding, testing, polling, reading.
+- `agent_phases`: per agent type (named like the CLI, e.g. `Agent(reviewer)`; the `agent_type` filter accepts `reviewer` or `Agent(reviewer)`), run count, average duration and the share of thinking, coding, testing, polling, reading.
 - `session_timeline`: one session (id prefix, or `"current"` for the latest session of the server's working directory): buckets, the 10 slowest steps and each subagent's phases.
 - `compare`: two date ranges side by side with differences (after minus before) and notes when a sample is too small.
-- `quality_signals`: reports per dispatch for each agent type, test failure rate, API errors, executor dispatches per session, sleep polling share.
+- `quality_signals`: reports per dispatch for each agent type, test failure rate, API errors, executor dispatches per session (an agent type counts as an executor when its name contains `executor`), sleep polling share.
 
 Without MCP, the same data is available from the command line: `cc-timeline compare --before 2026-10-01:2026-10-14 --after 2026-10-15:2026-10-28 [--project X] [--json]` and `cc-timeline quality [--days N | --since D --until D] [--json]`.
 

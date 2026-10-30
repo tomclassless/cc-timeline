@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from fixtures_mcp import AFTER, BEFORE, CANARY, CWD, EXEC, PROJECT, PROJECT_DIR, REV, standard_root
+from fixtures_mcp import AEXEC, AREV, AFTER, BEFORE, CANARY, CWD, EXEC, PROJECT, PROJECT_DIR, REV, standard_root
 
 from cc_timeline import __version__, cli, mcp
 from cc_timeline.mcp import McpServer
@@ -139,6 +139,14 @@ def test_serve_loop_lines(tmp_path):
     assert len(got) == 3
 
 
+def test_empty_batch_is_invalid_request(tmp_path):
+    import io
+    out = io.StringIO()
+    mcp.serve(McpServer(tmp_path), io.StringIO("[]\n"), out)
+    assert json.loads(out.getvalue()) == {"jsonrpc": "2.0", "id": None,
+                                          "error": {"code": -32600, "message": "Invalid Request"}}
+
+
 def test_subprocess_handshake(tmp_path):
     root = standard_root(tmp_path)
     env = {**os.environ, "PYTHONPATH": SRC, "PYTHONIOENCODING": "utf-8"}
@@ -187,7 +195,7 @@ def test_tool_summary(srv):
 
 def test_tool_agent_phases(srv):
     d = data(srv, "agent_phases", **ALL, agent_type=EXEC)
-    assert [a["type"] for a in d["agents"]] == [EXEC] and d["agents"][0]["total_sec"] == 35
+    assert [a["type"] for a in d["agents"]] == [AEXEC] and d["agents"][0]["total_sec"] == 35
 
 
 def test_tool_session_timeline(srv):
@@ -211,7 +219,7 @@ def test_tool_compare(srv):
 def test_tool_quality_signals(srv):
     d = data(srv, "quality_signals", **ALL)
     assert d["executor_dispatches_per_session"] == 0.5
-    assert {a["type"]: a["reports_per_dispatch"] for a in d["agents"]}[REV] == 1.5
+    assert {a["type"]: a["reports_per_dispatch"] for a in d["agents"]}[AREV] == 1.5
 
 
 # ── privacy ──
@@ -240,7 +248,7 @@ def test_redact_hides_names(srv):
         assert PROJECT not in text and EXEC not in text and REV not in text
         assert "11111111" not in text and "22222222" not in text
     red = json.loads(all_outputs(srv, True)[3])["structuredContent"]
-    assert {a["type"] for a in red["agents"]} == {"agent-1", "agent-2"}
+    assert {a["type"] for a in red["agents"]} == {"Agent(agent-1)", "Agent(agent-2)"}
     assert red["executor_dispatches_per_session"] == 0.5   # computed before names are hidden
 
 

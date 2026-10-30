@@ -75,7 +75,7 @@ TOOLS = [
                     "share per phase (thinking, writing code, other generation, test/build, polling, reading, "
                     "other). Use it to find which agent is slow and why (e.g. high thinking or polling share). "
                     "With redact=true, agent_type must use the redacted name.",
-     "inputSchema": schema({"agent_type": {"type": "string", "description": "Only this agent type, e.g. reviewer."}}),
+     "inputSchema": schema({"agent_type": {"type": "string", "description": "Only this agent type, e.g. reviewer or Agent(reviewer)."}}),
      "handler": t_agent_phases},
     {"name": "session_timeline",
      "description": "Breakdown of one session: time buckets, the 10 slowest steps (category, item, seconds) and "
@@ -210,7 +210,9 @@ def serve(server, stdin, stdout):
         except json.JSONDecodeError:
             reply = error(None, -32700, "Parse error")
         else:
-            if isinstance(msg, list):  # JSON-RPC batch (allowed by older protocol versions)
+            if msg == []:
+                reply = error(None, -32600, "Invalid Request")
+            elif isinstance(msg, list):  # JSON-RPC batch (allowed by older protocol versions)
                 replies = [r for r in (server.handle(m) for m in msg) if r is not None]
                 reply = replies or None
             else:

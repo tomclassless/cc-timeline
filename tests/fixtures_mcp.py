@@ -7,6 +7,7 @@ NOON = 12 * 3600          # sessions start at noon UTC so the local date is stab
 BEFORE = {"since": "2025-12-30", "until": "2026-01-05"}
 AFTER = {"since": "2026-01-08", "until": "2026-01-20"}
 EXEC, REV = "zzexecutor", "zzreviewer"
+AEXEC, AREV = f"Agent({EXEC})", f"Agent({REV})"
 PROJECT_DIR, PROJECT = "-Users-x-zzproj", "zzproj"
 CWD = "/Users/x/zzproj"
 

@@ -149,10 +149,10 @@ claude mcp add cc-timeline -- uvx --from git+https://github.com/tomclassless/cc-
 逐字稿不在 `~/.claude/projects` 時用 `cc-timeline mcp --root PATH`。工具（都接受 `redact: true`，會遮蔽專案名、session id、自訂 agent 名）：
 
 - `summary`：模型／工具／背景／等你的時間占比、前幾名項目、session 與 API 錯誤數；可用 `by` 依日、週、專案或 session 分列。
-- `agent_phases`：各 agent 類型的次數、平均時長，以及思考、寫碼、測試、輪詢、讀取的占比。
+- `agent_phases`：各 agent 類型（名稱同 CLI，如 `Agent(reviewer)`；`agent_type` 篩選可寫 `reviewer` 或 `Agent(reviewer)`）的次數、平均時長，以及思考、寫碼、測試、輪詢、讀取的占比。
 - `session_timeline`：單一 session（id 前綴，或 `"current"` 代表 server 工作目錄最近的 session）：時間分配、最慢 10 步、各 subagent 的 phase。
 - `compare`：兩段日期並列比較與差值（after − before），樣本不足時附註。
-- `quality_signals`：各 agent 的回報÷派出、測試失敗率、API 錯誤、每個 session 派出 executor 次數、sleep 輪詢占比。
+- `quality_signals`：各 agent 的回報÷派出、測試失敗率、API 錯誤、每個 session 派出 executor 次數（agent 類型名稱含 `executor` 才算）、sleep 輪詢占比。
 
 沒有 MCP 時，命令列也拿得到同樣資料：`cc-timeline compare --before 2026-10-01:2026-10-14 --after 2026-10-15:2026-10-28 [--project X] [--json]`、`cc-timeline quality [--days N | --since D --until D] [--json]`。
 

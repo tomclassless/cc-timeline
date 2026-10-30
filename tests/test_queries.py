@@ -2,7 +2,7 @@ import json
 import os
 
 import pytest
-from fixtures_mcp import (AFTER, BEFORE, CANARY, CWD, EXEC, PROJECT, PROJECT_DIR, REV, small_session,
+from fixtures_mcp import (AEXEC, AREV, AFTER, BEFORE, CANARY, CWD, EXEC, PROJECT, PROJECT_DIR, REV, small_session,
                           standard_root, write_full, write_light)
 
 from cc_timeline import cli, queries
@@ -56,7 +56,7 @@ def test_unknown_format_warning(tmp_path):
 def test_agent_phases(tmp_path):
     d = queries.agent_phases(standard_root(tmp_path), **ALL)
     by = {a["type"]: a for a in d["agents"]}
-    ex, rv = by[EXEC], by[REV]
+    ex, rv = by[AEXEC], by[AREV]
     assert ex["runs"] == 1 and ex["total_sec"] == 35 and ex["avg_sec"] == 35
     assert ex["phases"]["think"] == {"sec": 10, "share": round(10 / 35, 4)}
     assert ex["phases"]["code"]["sec"] == 5 and ex["phases"]["gen"]["sec"] == 8
@@ -64,15 +64,15 @@ def test_agent_phases(tmp_path):
     assert rv["runs"] == 2 and rv["total_sec"] == 50 and rv["avg_sec"] == 25
     assert rv["phases"]["poll"]["sec"] == 30 and rv["phases"]["think"]["sec"] == 10
     only = queries.agent_phases(standard_root(tmp_path), **ALL, agent_type=REV)["agents"]
-    assert [a["type"] for a in only] == [REV]
+    assert [a["type"] for a in only] == [AREV]
     assert queries.agent_phases(tmp_path, **ALL, agent_type="nope")["notes"]
 
 
 def test_quality_signals(tmp_path):
     q = queries.quality_signals(standard_root(tmp_path), **ALL)
     by = {a["type"]: a for a in q["agents"]}
-    assert by[REV] == {"type": REV, "dispatched": 2, "reported": 3, "reports_per_dispatch": 1.5}
-    assert by[EXEC]["reports_per_dispatch"] == 1.0
+    assert by[AREV] == {"type": AREV, "dispatched": 2, "reported": 3, "reports_per_dispatch": 1.5}
+    assert by[AEXEC]["reports_per_dispatch"] == 1.0
     assert q["tests"] == {"calls": 3, "failures": 2, "failure_rate": round(2 / 3, 4), "is_error_field_seen": True}
     assert q["api_errors"] == 1
     assert q["executor_dispatches_per_session"] == 0.5
@@ -108,9 +108,9 @@ def test_session_timeline_by_prefix(tmp_path):
     assert slow[0] == {"category": "bg", "item": f"Waiting for Agent({REV}) report", "sec": 20, "at": slow[0]["at"]}
     assert [s["sec"] for s in slow] == sorted((s["sec"] for s in slow), reverse=True)
     sub = {a["type"]: a for a in d["subagents"]}
-    assert sub[EXEC]["duration_sec"] == 35 and sub[EXEC]["phases"]["think"] == 10
-    assert sub[REV]["duration_sec"] == 40 and sub[REV]["phases"]["poll"] == 30
-    assert sub[EXEC]["start_offset_sec"] == 0
+    assert sub[AEXEC]["duration_sec"] == 35 and sub[AEXEC]["phases"]["think"] == 10
+    assert sub[AREV]["duration_sec"] == 40 and sub[AREV]["phases"]["poll"] == 30
+    assert sub[AEXEC]["start_offset_sec"] == 0
     assert [a["start_offset_sec"] for a in d["subagents"]] == sorted(a["start_offset_sec"] for a in d["subagents"])
 
 
@@ -159,11 +159,11 @@ def test_compare_values(tmp_path):
     assert d["buckets"]["model"]["share_pp"] == round((round(4 / 35, 4) - round(9 / 83, 4)) * 100, 3)
     assert d["buckets"]["bg"]["sec"] == 20 - 52
     ag = {x["type"]: x for x in d["agents"]}
-    assert ag[REV]["avg_sec"] == 10 - 40 and ag[REV]["runs_before"] == 1 and ag[REV]["runs_after"] == 1
-    assert ag[REV]["phases"]["think"] == 100.0 and ag[REV]["phases"]["poll"] == -75.0
-    assert ag[EXEC]["avg_sec"] is None and ag[EXEC]["phases"] is None and ag[EXEC]["runs_after"] == 0
+    assert ag[AREV]["avg_sec"] == 10 - 40 and ag[AREV]["runs_before"] == 1 and ag[AREV]["runs_after"] == 1
+    assert ag[AREV]["phases"]["think"] == 100.0 and ag[AREV]["phases"]["poll"] == -75.0
+    assert ag[AEXEC]["avg_sec"] is None and ag[AEXEC]["phases"] is None and ag[AEXEC]["runs_after"] == 0
     dq = d["quality"]
-    assert {x["type"]: x["delta"] for x in dq["reports_per_dispatch"]}[REV] == 1.0 - 2.0
+    assert {x["type"]: x["delta"] for x in dq["reports_per_dispatch"]}[AREV] == 1.0 - 2.0
     assert dq["test_failure_rate_pp"] is None
     assert dq["api_errors"] == -1
     assert dq["executor_dispatches_per_session"] is None
@@ -236,3 +236,33 @@ def test_flag_usage_still_works(tmp_path, capsys):
     root = standard_root(tmp_path)
     assert cli.main(["--root", str(root), "--since", "2000-01-01", "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["sessionCount"] == 2
+
+
+def test_report_after_idle_gap_is_still_counted(tmp_path):
+    from helpers import Session
+    s = (Session().user(0).tool_use(1, "a1", "Agent", {"subagent_type": "reviewer"})
+         .tool_result(2, "a1", "agentId: eee555555555 started")
+         .user(4000, "done", origin={"kind": "task_notification", "from": "eee555555555"}))
+    s.write(tmp_path)
+    q = queries.quality_signals(tmp_path, since="2000-01-01")
+    assert q["agents"] == [{"type": "Agent(reviewer)", "dispatched": 1, "reported": 1, "reports_per_dispatch": 1.0}]
+    assert queries.summary(tmp_path, since="2000-01-01")["buckets"]["bg"]["sec"] == 0   # time still "away"
+
+
+def test_agent_type_filter_accepts_both_forms(tmp_path):
+    root = standard_root(tmp_path)
+    for form in (REV, AREV):
+        assert [a["type"] for a in queries.agent_phases(root, **ALL, agent_type=form)["agents"]] == [AREV]
+
+
+def test_current_session_resolves_symlinked_cwd(tmp_path):
+    from helpers import Session
+    real = tmp_path / "real" / "proj"
+    real.mkdir(parents=True)
+    link = tmp_path / "link"
+    link.symlink_to(real)
+    root = tmp_path / "root"
+    name = "".join(c if c.isalnum() else "-" for c in str(real.resolve()))
+    Session().user(0).assistant(3).write(root, project=name, sid="55555555-eeee")
+    assert queries.current_session_path(root, link).name == "55555555-eeee.jsonl"
+    assert queries.current_session_path(root, real).name == "55555555-eeee.jsonl"

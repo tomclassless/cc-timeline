@@ -186,6 +186,7 @@ def analyze(path, idle_cap):
     buckets = defaultdict(float)
     tools = defaultdict(float)
     tool_calls = defaultdict(int)
+    agent_reports = defaultdict(int)  # background reports per agent label, counted even after long gaps
     steps = []
     segments = []  # (start, end, category) covering the whole session; idle gaps are "idle"
 
@@ -208,6 +209,8 @@ def analyze(path, idle_cap):
     classify(entries[0], tool_names, agents)
     for e in entries[1:]:
         cat, detail = classify(e, tool_names, agents)
+        if cat == "bg" and isinstance(detail, tuple) and detail[0] == "agent":
+            agent_reports[detail[1]] += 1
         # Snapshots, hooks, progress etc. are not state changes; the gap goes to the next real event.
         if cat == "other":
             skipped, skipped_ts = shape(e), parse_ts(e["timestamp"])
@@ -238,6 +241,7 @@ def analyze(path, idle_cap):
         "buckets": buckets,
         "tools": tools,
         "tool_calls": tool_calls,
+        "agent_reports": agent_reports,
         "entries": entries,
         "api_errors": sum(1 for e in entries if e.get("isApiErrorMessage")),
         "steps": steps,
