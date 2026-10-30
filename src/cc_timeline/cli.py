@@ -70,6 +70,9 @@ def build_parser():
                     help="show subagent internals: thinking, reading, editing, testing per agent type")
     ap.add_argument("--html", nargs="?", const=DEFAULT_REPORT, type=Path, metavar="PATH",
                     help=f"write a visual HTML report (default {DEFAULT_REPORT})")
+    ap.add_argument("--timeline-sessions", type=int, default=20, metavar="N",
+                    help="embed the session timeline (gantt) for the N sessions with the most active "
+                         "time in the HTML report (default 20, 0 = none)")
     ap.add_argument("--open", action="store_true", help="with --html: open the report in a browser")
     ap.add_argument("--json", action="store_true", help="print report data as JSON to stdout")
     ap.add_argument("--by", choices=["day", "week", "project", "session"],
@@ -112,7 +115,7 @@ def main(argv=None):
 
     if args.html or args.json:
         data = build_report(results, days, args.project, lang, idle_cap, args.redact,
-                            args.since, args.until)
+                            args.since, args.until, args.timeline_sessions)
         if args.html:
             out = write_html(data, args.html)
             print(L["report_written"].format(path=out), file=sys.stderr if args.json else sys.stdout)

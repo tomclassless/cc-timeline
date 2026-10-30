@@ -160,6 +160,109 @@ def session_rows(results, L):
     return rows
 
 
+MAX_AGENT_ROWS = 15   # beyond this, non-overlapping agents of one type share a row
+MIN_GAP = 60          # an away stretch shorter than this stays on the time axis
+
+
+def rel_segments(segments, origin, group=None):
+    """[(start, end, cat)] -> [[sec, sec, cat]] relative to origin, whole seconds.
+
+    Adjacent segments of the same category are merged; zero-length ones are dropped.
+    """
+    out = []
+    for a, b, cat in segments:
+        s = max(round((a - origin).total_seconds()), 0)
+        e = max(round((b - origin).total_seconds()), 0)
+        if e <= s:
+            continue
+        cat = group(cat) if group else cat
+        if out and out[-1][2] == cat and out[-1][1] == s:
+            out[-1][1] = e
+        else:
+            out.append([s, e, cat])
+    return out
+
+
+def union(spans):
+    out = []
+    for s, e in sorted(spans):
+        if out and s <= out[-1][1]:
+            out[-1][1] = max(out[-1][1], e)
+        else:
+            out.append([s, e])
+    return out
+
+
+def away_gaps(main, agent_rows):
+    """Away stretches of the main thread during which no subagent was working (axis breaks)."""
+    busy = union([(s, e) for a in agent_rows for s, e, _ in a["segs"]])
+    gaps = []
+    for s, e, cat in main:
+        if cat != "idle":
+            continue
+        cur = s
+        for bs, be in busy:
+            if be <= cur or bs >= e:
+                continue
+            if bs > cur:
+                gaps.append([cur, bs])
+            cur = max(cur, be)
+        if cur < e:
+            gaps.append([cur, e])
+    return [g for g in gaps if g[1] - g[0] >= MIN_GAP]
+
+
+def assign_rows(agents):
+    """Row per agent; with many agents, non-overlapping ones of the same type share a row."""
+    ordered = sorted(range(len(agents)), key=lambda i: (agents[i]["start"], i))
+    if len(agents) <= MAX_AGENT_ROWS:
+        for row, i in enumerate(ordered):
+            agents[i]["row"] = row
+        return len(agents)
+    lanes = []  # [type, end]
+    for i in ordered:
+        a = agents[i]
+        lane = next((n for n, (t, end) in enumerate(lanes) if t == a["type"] and end <= a["start"]), None)
+        if lane is None:
+            lanes.append([a["type"], a["end"]])
+            lane = len(lanes) - 1
+        else:
+            lanes[lane][1] = a["end"]
+        a["row"] = lane
+    return len(lanes)
+
+
+def timeline_data(results, L, idle_cap, limit):
+    """Gantt data for the `limit` sessions with the most active time (0 = none)."""
+    shown = sorted(results, key=lambda r: -(r["buckets"]["model"] + r["buckets"]["tool"]
+                                            + r["buckets"]["bg"]))[:max(limit, 0)]
+    shown.sort(key=lambda r: r["start"], reverse=True)
+    sessions = []
+    for r in shown:
+        origin = r["start"]
+        main = rel_segments(r["segments"], origin)
+        agents = []
+        for run in agent_runs(r, idle_cap):
+            segs = rel_segments(run["segments"], origin, phase_group)
+            if not segs or not run["start"]:
+                continue
+            agents.append({"type": agent_name(L, run["label"]), "segs": segs,
+                           "start": max(round((run["start"] - origin).total_seconds()), 0),
+                           "end": max(round((run["end"] - origin).total_seconds()), 0)})
+        rows = assign_rows(agents)
+        agents.sort(key=lambda a: (a["row"], a["start"]))
+        b = r["buckets"]
+        busy = sum(b[k] for k in BUCKET_KEYS)
+        local = origin.astimezone()
+        sessions.append({
+            "id": r["id"][:8], "project": r["project"], "start": f"{local:%Y-%m-%d %H:%M}",
+            "clock0": local.hour * 3600 + local.minute * 60 + local.second,
+            "wall": round(r["wall"]), "bgShare": b["bg"] / busy if busy else 0,
+            "main": main, "agents": agents, "rows": rows, "gaps": away_gaps(main, agents)})
+    default = max(range(len(sessions)), key=lambda i: sessions[i]["bgShare"], default=0)
+    return {"sessions": sessions, "default": default}
+
+
 def group_key(r, by):
     local = r["start"].astimezone()
     if by == "day":
@@ -227,7 +330,8 @@ def period_text(L, days, since, until):
     return L["period_days"].format(days=f"{days:g}")
 
 
-def build_report(results, days, project, lang, idle_cap, redacted=False, since=None, until=None):
+def build_report(results, days, project, lang, idle_cap, redacted=False, since=None, until=None,
+                timeline_sessions=20):
     """Report data; only times, names and ids, never conversation content."""
     L = labels(lang)
     day = lambda ts: f"{ts.astimezone():%Y-%m-%d}"
@@ -282,6 +386,7 @@ def build_report(results, days, project, lang, idle_cap, redacted=False, since=N
                           for k, v in agents.items()), key=lambda x: -sum(x["phases"].values())),
         "agentDaily": [{"date": d, "type": t, **v} for (d, t), v in sorted(agent_daily.items())],
         "sessions": sorted(sessions, key=lambda s: s["start"], reverse=True),
+        "timeline": timeline_data(results, L, idle_cap, timeline_sessions),
     }
 
 

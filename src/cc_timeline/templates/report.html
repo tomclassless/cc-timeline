@@ -55,6 +55,9 @@ th:first-child, td:first-child, th.l, td.l { text-align: left; }
 th { color: var(--ink-2); font-weight: 500; }
 th.sort { cursor: pointer; user-select: none; }
 th.sort:hover { color: var(--ink); }
+select { max-width: 100%; margin: 0 0 10px; padding: 4px 8px; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; }
+.hatch { background: repeating-linear-gradient(45deg, var(--muted) 0 1px, var(--axis) 1px 4px); }
 footer { margin-top: 24px; color: var(--muted); font-size: 12px; }
 footer .warn { color: var(--s2); margin: 0 0 4px; }
 #tip { position: fixed; pointer-events: none; background: var(--surface); color: var(--ink);
@@ -84,6 +87,15 @@ footer .warn { color: var(--s2); margin: 0 0 4px; }
     <div class="legend" id="itemsLegend"></div>
     <div id="items"></div>
     <details><summary data-l="table"></summary><div class="scroll" id="itemsTable"></div></details>
+  </section>
+
+  <section class="card" id="tlCard">
+    <h2 data-l="tl_title"></h2>
+    <p class="sub" data-l="tl_sub"></p>
+    <select id="tlSel" aria-label="session"></select>
+    <div class="legend" id="tlLegend"></div>
+    <div class="scroll" id="tl"></div>
+    <details><summary data-l="table"></summary><div class="scroll" id="tlTable"></div></details>
   </section>
 
   <section class="card">
@@ -254,6 +266,92 @@ document.getElementById("itemsLegend").innerHTML =
 table("itemsTable", [L.h_item, L.h_type, L.h_calls, L.h_time, L.h_avg],
   D.items.map(i => [i.name, KIND[i.kind][1], i.n, fmt(i.sec), fmt(i.sec / i.n)]));
 
+// -- session timeline (gantt) --
+const TL = D.timeline;
+const GAP_W = 24, TL_MIN_W = 640;
+// One meaning, one colour: model = s1, tool = s2, test/build = s5, polling = s7, waiting for you = s4.
+const TL_FILL = {model: C(0), tool: C(1), user: C(3), bg: "url(#hatch)", idle: null,
+  think: C(0), code: C(0), gen: C(0), read: C(1), other: C(1), test: C(4), poll: C(6)};
+const TL_MAIN_NAME = {model: L.b_model, tool: L.b_tool, bg: L.tl_bg, user: L.b_user};
+const clock = (s, t) => { const x = (s.clock0 + t) % 86400, p = n => String(n).padStart(2, "0");
+  return `${p(Math.floor(x / 3600))}:${p(Math.floor(x % 3600 / 60))}:${p(x % 60)}`; };
+document.getElementById("tlLegend").innerHTML = [
+  [C(0), L.b_model], [C(1), L.b_tool], [C(4), L.g_test], [C(6), L.g_poll], [C(3), L.b_user]]
+  .map(([c, n]) => `<span><i class="sw" style="background:${c}"></i>${esc(n)}</span>`).join("") +
+  `<span><i class="sw hatch"></i>${esc(L.tl_bg)}</span>`;
+function drawTimeline() {
+  const card = document.getElementById("tlCard");
+  if (!TL.sessions.length) { card.style.display = "none"; return; }
+  const sel = document.getElementById("tlSel");
+  if (!sel.options.length) {
+    TL.sessions.forEach((s, i) => sel.add(new Option(
+      tpl("tl_opt", {start: s.start, project: s.project, total: fmt(s.wall)}), i)));
+    sel.value = TL.default;
+    sel.onchange = drawTimeline;
+  }
+  const S = TL.sessions[+sel.value], host = document.getElementById("tl");
+  const rows = [{name: L.tl_main, segs: S.main, main: true}];
+  const lanes = [];
+  S.agents.forEach(a => {
+    if (!lanes[a.row]) { lanes[a.row] = {name: a.type, segs: []}; rows.push(lanes[a.row]); }
+    lanes[a.row].segs.push(...a.segs.map(g => [...g, a]));
+  });
+  const extent = Math.max(S.wall, ...S.main.map(g => g[1]), ...S.agents.map(a => a.end), 1);
+  const lw = 128, top = 22, rowH = 26, H = top + rows.length * rowH + 24;
+  const hostW = host.clientWidth || TL_MIN_W, W = Math.max(hostW, TL_MIN_W);
+  host.innerHTML = "";
+  const s = el("svg", {viewBox: `0 0 ${W} ${H}`, height: H, width: W}, host);
+  if (W > hostW) s.style.width = W + "px";
+  const defs = el("defs", {}, s);
+  const pat = el("pattern", {id: "hatch", width: 5, height: 5, patternUnits: "userSpaceOnUse", patternTransform: "rotate(45)"}, defs);
+  el("rect", {width: 5, height: 5, fill: "var(--axis)"}, pat);
+  el("line", {x1: 0, y1: 0, x2: 0, y2: 5, stroke: "var(--muted)", "stroke-width": 1.5}, pat);
+  // Time axis with the away stretches collapsed to fixed-width breaks.
+  const gaps = S.gaps, right = 12;
+  const kept = extent - sum(gaps.map(g => g[1] - g[0]));
+  const scale = Math.max(W - lw - right - GAP_W * gaps.length, 40) / Math.max(kept, 1);
+  const X = t => {
+    let saved = 0, off = 0;
+    for (const [a, b] of gaps) {
+      if (t >= b) { saved += b - a; off += GAP_W; } else { if (t > a) saved += t - a; break; }
+    }
+    return lw + (t - saved) * scale + off;
+  };
+  const bottom = top + rows.length * rowH;
+  el("line", {x1: lw, x2: W - right, y1: bottom, y2: bottom, class: "axis"}, s);
+  const steps = [5, 10, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 14400, 28800, 86400];
+  const step = steps.find(v => v * scale >= 70) || steps[steps.length - 1];
+  for (let t = 0; t <= extent; t += step) {
+    if (gaps.some(([a, b]) => t > a && t < b)) continue;
+    el("line", {x1: X(t), x2: X(t), y1: top, y2: bottom, class: "grid"}, s);
+    el("text", {x: X(t), y: bottom + 14, "text-anchor": "middle"}, s).textContent = fmt(t);
+  }
+  gaps.forEach(([a, b]) => {
+    const x = X(a);
+    el("rect", {x, y: top, width: GAP_W, height: bottom - top, fill: "var(--page)"}, s);
+    el("line", {x1: x, x2: x, y1: top, y2: bottom, class: "axis", "stroke-dasharray": "3 3"}, s);
+    el("line", {x1: x + GAP_W, x2: x + GAP_W, y1: top, y2: bottom, class: "axis", "stroke-dasharray": "3 3"}, s);
+    el("text", {x: x + GAP_W / 2, y: top - 8, "text-anchor": "middle"}, s).textContent = tpl("tl_gap", {t: fmt(b - a)});
+  });
+  rows.forEach((row, i) => {
+    const y = top + i * rowH + 4;
+    const label = row.name.length > 18 ? row.name.slice(0, 17) + "…" : row.name;
+    el("text", {x: lw - 8, y: y + 12, "text-anchor": "end", class: "ink"}, s).textContent = label;
+    row.segs.forEach(([a, b, cat, ag]) => {
+      const fill = TL_FILL[cat];
+      if (!fill) return;
+      const x1 = X(a), r = el("rect", {x: x1, y, width: Math.max(1, X(b) - x1), height: 18, rx: 2, fill,
+        stroke: "var(--surface)", "stroke-width": 1.5, class: "hit"}, s);
+      const name = row.main ? TL_MAIN_NAME[cat] : G(cat);
+      hover(r, `<b>${esc(row.name)}</b> · ${esc(name)}<br>` + tpl("tl_tip",
+        {start: clock(S, a), end: clock(S, b), dur: fmt(b - a)}));
+    });
+  });
+  if (!S.agents.length) empty("tlTable", L.tl_none);
+  else table("tlTable", [L.h_agent, L.h_begin, L.h_end, L.h_dur], S.agents.map(a =>
+    [a.type, clock(S, a.start), clock(S, a.end), fmt(a.end - a.start)]));
+}
+
 // -- agent internals, 100% stacked bars --
 function drawAgents() {
   const host = document.getElementById("agents");
@@ -350,7 +448,7 @@ document.getElementById("foot").innerHTML =
   (fv.min ? `<p>${esc(tpl("format_versions", {min: fv.min, max: fv.max}))}</p>` : "");
 
 function drawAll() {
-  drawDaily(); drawItems(); drawAgents();
+  drawTimeline(); drawDaily(); drawItems(); drawAgents();
   drawLine("dur", r => r.total / r.runs / 60, v => `${Math.round(v)}m`);
   drawLine("think", r => r.think / r.total * 100, v => `${Math.round(v)}%`);
 }

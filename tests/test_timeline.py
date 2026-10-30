@@ -529,3 +529,100 @@ def test_format_unknown_warns(tmp_path, capsys, lang, needle):
     # unknown origin still counts as background, labelled by its value
     r = analyze(next(tmp_path.glob("*/*.jsonl")), CAP)
     assert r["tools"][("other", "weird")] == 10
+
+
+# ── session timeline (gantt) ──
+
+def timeline_for(tmp_path, n=20, **kw):
+    results = [analyze(p, CAP) for p in sorted(tmp_path.glob("*/*.jsonl"))]
+    return report.build_report(results, 7, None, "en", CAP, timeline_sessions=n, **kw)["timeline"]
+
+
+def test_main_segments_with_wake_split_and_idle(tmp_path):
+    s = Session().user(0).assistant(1, mid="m1")
+    s.raw(10, "attachment")
+    s.raw(41, "system", subtype="stop_hook_summary")
+    s.assistant(50, mid="m2")
+    assert run(s, tmp_path)["segments"][0][2] == "model"
+    tl = timeline_for(tmp_path)
+    assert tl["sessions"][0]["main"] == [[0, 1, "model"], [1, 41, "bg"], [41, 50, "model"]]
+    assert tl["sessions"][0]["gaps"] == []
+
+
+def test_main_segments_merge_and_idle_gap(tmp_path):
+    basic().write(tmp_path)
+    s = timeline_for(tmp_path)["sessions"][0]
+    assert s["main"] == [[0, 7, "model"], [7, 12, "tool"], [12, 14, "model"], [14, 20, "user"],
+                         [20, 4020, "idle"]]
+    assert s["gaps"] == [[20, 4020]]
+    assert s["wall"] == 4020 and s["rows"] == 0 and s["agents"] == []
+
+
+def test_subagent_segments_use_phase_groups_and_merge(tmp_path):
+    main = Session().user(0).assistant(1).write(tmp_path)
+    agent_transcript().write_agent(main, "a1", "explorer")
+    a = Session(sidechain=True).user(0).thinking(2).thinking(5).thinking(9)
+    a.write_agent(main, "a2", "reviewer")
+    s = timeline_for(tmp_path)["sessions"][0]
+    by = {x["type"]: x for x in s["agents"]}
+    assert by["Agent(explorer)"]["segs"] == [
+        [0, 10, "think"], [10, 15, "code"], [15, 17, "other"], [17, 20, "gen"], [20, 30, "test"],
+        [30, 35, "gen"], [1000, 1004, "think"], [1004, 1010, "gen"], [1010, 1011, "read"]]
+    assert (by["Agent(explorer)"]["start"], by["Agent(explorer)"]["end"]) == (0, 5011)
+    assert by["Agent(reviewer)"]["segs"] == [[0, 9, "think"]]
+    assert sorted(x["row"] for x in s["agents"]) == [0, 1] and s["rows"] == 2
+
+
+def test_gaps_skip_stretches_where_an_agent_works(tmp_path):
+    main = basic().write(tmp_path)  # away from 20 to 4020
+    Session(sidechain=True).user(100).thinking(500).write_agent(main, "a1", "explorer")
+    s = timeline_for(tmp_path)["sessions"][0]
+    assert s["main"][-1] == [20, 4020, "idle"]
+    assert s["gaps"] == [[20, 100], [500, 4020]]
+
+
+def test_agents_share_rows_beyond_fifteen(tmp_path):
+    main = Session().user(0).assistant(1).write(tmp_path)
+    for i in range(17):  # back to back, never overlapping
+        Session(sidechain=True).user(i * 10).thinking(i * 10 + 5).write_agent(main, f"s{i:02d}", "explorer")
+    Session(sidechain=True).user(0).thinking(160).write_agent(main, "long", "explorer")  # overlaps all
+    s = timeline_for(tmp_path)["sessions"][0]
+    assert len(s["agents"]) == 18 and s["rows"] == 2
+    assert {a["row"] for a in s["agents"]} == {0, 1}
+    few = report.assign_rows([{"type": "t", "start": i, "end": i + 1} for i in range(15)])
+    assert few == 15
+
+
+def test_timeline_sessions_limit_and_default(tmp_path, capsys):
+    # A: 5s model only. B: long, with 8s of background wait. C: longest active, no background.
+    Session().user(0).assistant(5).write(tmp_path, sid="aaaa0000-x")
+    Session().user(0).assistant(2, mid="m1").assistant(10, mid="m2").write(tmp_path, sid="bbbb0000-x")
+    Session().user(0).assistant(100).write(tmp_path, sid="cccc0000-x")
+    tl = timeline_for(tmp_path, n=2)
+    assert sorted(s["id"] for s in tl["sessions"]) == ["bbbb0000", "cccc0000"]
+    assert tl["sessions"][tl["default"]]["id"] == "bbbb0000"  # highest background share
+    assert timeline_for(tmp_path, n=0) == {"sessions": [], "default": 0}
+    # CLI option and HTML
+    out = tmp_path / "y.html"
+    cli.main(["--root", str(tmp_path), *ALL, "--html", str(out), "--timeline-sessions", "0"])
+    capsys.readouterr()
+    html = out.read_text(encoding="utf-8")
+    data = json.loads(re.search(r'<script id="data" type="application/json">(.*?)</script>',
+                                html, re.S).group(1).replace("<\\/", "</"))
+    assert data["timeline"]["sessions"] == []
+
+
+@pytest.mark.parametrize("lang,needle", [("en", "Session timeline"), ("zh-TW", "Session 時間軸")])
+def test_html_timeline_card(tmp_path, capsys, lang, needle):
+    main = basic().write(tmp_path)
+    Session(sidechain=True).user(100).thinking(500).write_agent(main, "a1", "explorer")
+    out = tmp_path / "t.html"
+    cli.main(["--root", str(tmp_path), *ALL, "--html", str(out), "--lang", lang])
+    capsys.readouterr()
+    html = out.read_text(encoding="utf-8")
+    data = json.loads(re.search(r'<script id="data" type="application/json">(.*?)</script>',
+                                html, re.S).group(1).replace("<\\/", "</"))
+    assert data["labels"]["tl_title"] == needle
+    assert 'id="tlCard"' in html
+    s = data["timeline"]["sessions"][0]
+    assert s["agents"][0]["type"] == "Agent(explorer)" and s["gaps"] == [[20, 100], [500, 4020]]

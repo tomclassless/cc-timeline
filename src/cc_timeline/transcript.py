@@ -181,8 +181,10 @@ def analyze(path, idle_cap):
     tools = defaultdict(float)
     tool_calls = defaultdict(int)
     steps = []
+    segments = []  # (start, end, category) covering the whole session; idle gaps are "idle"
 
-    def add(cat, detail, gap, ts, transition):
+    def add(cat, detail, gap, ts, transition, start):
+        segments.append((start, ts, "idle" if gap > idle_cap else cat))
         if gap > idle_cap:
             # A long gap is usually away / sleep / resume the next day: not any category.
             buckets["idle"] += gap
@@ -212,11 +214,11 @@ def analyze(path, idle_cap):
         if cat == "model" and prev_mid and mid and mid != prev_mid:
             split = min(max(skipped_ts or ts, prev), ts)
             add("bg", ("wake", skipped), (split - prev).total_seconds(), split,
-                f"{prev_shape} → {skipped}")
+                f"{prev_shape} → {skipped}", prev)
             prev = split
         if cat == "tool" and detail in WAITS_ON_USER:
             cat = "user"
-        add(cat, detail, max((ts - prev).total_seconds(), 0), ts, transition)
+        add(cat, detail, max((ts - prev).total_seconds(), 0), ts, transition, prev)
         prev, prev_shape, prev_mid = ts, shape(e), mid
         skipped = skipped_ts = None
 
@@ -233,6 +235,7 @@ def analyze(path, idle_cap):
         "entries": entries,
         "api_errors": sum(1 for e in entries if e.get("isApiErrorMessage")),
         "steps": steps,
+        "segments": segments,
         "prompts": sum(1 for e in entries if classify(e, {})[0] == "user"),
         "path": path,
         "agent_corpus": agents,
