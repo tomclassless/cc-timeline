@@ -19,7 +19,7 @@ Where did the time go in your Claude Code sessions? `cc-timeline` reads the tran
 
 ## Related tools
 
-- [ccusage](https://github.com/ryoppippi/ccusage): token usage and cost reports.
+- [ccusage](https://github.com/ccusage/ccusage): token usage and cost reports.
 - [claude-devtools](https://github.com/matt1398/claude-devtools): session reconstruction and context breakdown.
 - [claude-session-dashboard](https://github.com/dlupiak/claude-session-dashboard): a dashboard with an agent dispatch Gantt chart.
 - [claude-code-log](https://github.com/daaain/claude-code-log) and [claude-code-transcripts](https://github.com/simonw/claude-code-transcripts): convert transcripts to HTML.

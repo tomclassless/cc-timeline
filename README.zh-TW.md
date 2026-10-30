@@ -19,7 +19,7 @@
 
 ## 相關工具
 
-- [ccusage](https://github.com/ryoppippi/ccusage)：token 用量與費用報表。
+- [ccusage](https://github.com/ccusage/ccusage)：token 用量與費用報表。
 - [claude-devtools](https://github.com/matt1398/claude-devtools)：session 重建與 context 拆解。
 - [claude-session-dashboard](https://github.com/dlupiak/claude-session-dashboard)：儀表板，含 agent 派工甘特圖。
 - [claude-code-log](https://github.com/daaain/claude-code-log) 與 [claude-code-transcripts](https://github.com/simonw/claude-code-transcripts)：把逐字稿轉成 HTML。
