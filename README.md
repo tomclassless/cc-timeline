@@ -125,6 +125,50 @@ Claude Code's transcript format is undocumented (`turnOrigin`, `queue-operation`
 - Bash classification is a heuristic based on the command text.
 - Column alignment in the terminal output assumes narrow characters (it is off for CJK text).
 
+## MCP server
+
+`cc-timeline mcp` runs an MCP server (stdio, standard library only) so Claude can query its own time allocation. Add it to Claude Code:
+
+```bash
+claude mcp add cc-timeline -- uvx --from git+https://github.com/tomclassless/cc-timeline cc-timeline mcp
+```
+
+(Once the package is on PyPI this becomes `claude mcp add cc-timeline -- uvx cc-timeline mcp`.) Installing the plugin registers the same server automatically. For Claude Desktop, add this to `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "cc-timeline": {
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/tomclassless/cc-timeline", "cc-timeline", "mcp"]
+    }
+  }
+}
+```
+
+Use `cc-timeline mcp --root PATH` to read transcripts from somewhere other than `~/.claude/projects`. Tools (all take `redact: true` to hide project names, session ids and custom agent types):
+
+- `summary`: time share of model / tools / background / waiting for you, top items, session and API error counts; optional `by` day, week, project or session.
+- `agent_phases`: per agent type, run count, average duration and the share of thinking, coding, testing, polling, reading.
+- `session_timeline`: one session (id prefix, or `"current"` for the latest session of the server's working directory): buckets, the 10 slowest steps and each subagent's phases.
+- `compare`: two date ranges side by side with differences (after minus before) and notes when a sample is too small.
+- `quality_signals`: reports per dispatch for each agent type, test failure rate, API errors, executor dispatches per session, sleep polling share.
+
+Without MCP, the same data is available from the command line: `cc-timeline compare --before 2026-10-01:2026-10-14 --after 2026-10-15:2026-10-28 [--project X] [--json]` and `cc-timeline quality [--days N | --since D --until D] [--json]`.
+
+**Privacy:** the tools return only aggregate numbers, names and ids. They never return conversation text, assistant output or Bash command text; the test suite checks this with a canary string.
+
+## Self-tuning (`/cc-timeline:tune`)
+
+The `tune` skill asks Claude to compare the last N days (default 7) with the N days before, look at the three biggest time sinks and match them against known patterns (agents thinking too long, running the full test suite every time, sleep polling, reviewers sending work back, the main thread idling while agents work). For each it proposes a concrete change (file, lines), the expected effect, and when to re-check.
+
+```
+/cc-timeline:tune --days 7
+/cc-timeline:tune --days 14 --project myapp
+```
+
+It **only suggests; it never edits your settings**, agent definitions or CLAUDE.md. Every suggestion comes with quality guardrails because time can drop for bad reasons: if reports per dispatch, the test failure rate or API errors go up after a change, the change did not make things better, it only moved the cost. Run `/cc-timeline:tune` again after enough sessions (at least 5 per period) to see whether a change held up.
+
 ## Privacy
 
 Everything runs locally; nothing is sent anywhere. Only timestamps, event types, tool names and ids are used. Conversation content is never printed or written to reports. Bash command text is used only to classify the command and is not output. Trace output (`--trace`) shows event types only: for user messages that start with `<` just the tag name (for example `<task-notification`), and the free-text `reason` field is masked unless it is a plain identifier.

@@ -125,6 +125,50 @@ Claude Code 的逐字稿格式沒有公開文件（`turnOrigin`、`queue-operati
 - Bash 分類是依指令文字的啟發式判斷。
 - 終端機輸出的欄位對齊假設字元寬度一致，中文會有些歪。
 
+## MCP server
+
+`cc-timeline mcp` 會啟動一個 MCP server（stdio，只用標準函式庫），讓 Claude 查詢自己的時間分配。加進 Claude Code：
+
+```bash
+claude mcp add cc-timeline -- uvx --from git+https://github.com/tomclassless/cc-timeline cc-timeline mcp
+```
+
+（套件上 PyPI 後可簡化成 `claude mcp add cc-timeline -- uvx cc-timeline mcp`。）安裝 plugin 時會自動註冊同一個 server。Claude Desktop 則在 `claude_desktop_config.json` 加：
+
+```json
+{
+  "mcpServers": {
+    "cc-timeline": {
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/tomclassless/cc-timeline", "cc-timeline", "mcp"]
+    }
+  }
+}
+```
+
+逐字稿不在 `~/.claude/projects` 時用 `cc-timeline mcp --root PATH`。工具（都接受 `redact: true`，會遮蔽專案名、session id、自訂 agent 名）：
+
+- `summary`：模型／工具／背景／等你的時間占比、前幾名項目、session 與 API 錯誤數；可用 `by` 依日、週、專案或 session 分列。
+- `agent_phases`：各 agent 類型的次數、平均時長，以及思考、寫碼、測試、輪詢、讀取的占比。
+- `session_timeline`：單一 session（id 前綴，或 `"current"` 代表 server 工作目錄最近的 session）：時間分配、最慢 10 步、各 subagent 的 phase。
+- `compare`：兩段日期並列比較與差值（after − before），樣本不足時附註。
+- `quality_signals`：各 agent 的回報÷派出、測試失敗率、API 錯誤、每個 session 派出 executor 次數、sleep 輪詢占比。
+
+沒有 MCP 時，命令列也拿得到同樣資料：`cc-timeline compare --before 2026-10-01:2026-10-14 --after 2026-10-15:2026-10-28 [--project X] [--json]`、`cc-timeline quality [--days N | --since D --until D] [--json]`。
+
+**隱私：**工具只回傳彙總數字、名稱與 id，絕不回傳對話文字、assistant 輸出或 Bash 指令文字；測試用一個特徵字串驗證這點。
+
+## 自我調校（`/cc-timeline:tune`）
+
+`tune` skill 請 Claude 比較最近 N 天（預設 7）與前 N 天，找出前三大時間消耗，對照已知模式（agent 思考太久、每次都跑完整測試、sleep 輪詢、reviewer 一直退件、agent 工作時主對話閒置）。每個建議都附具體修改（哪個檔、哪幾行）、預期效果，以及多久後再比較。
+
+```
+/cc-timeline:tune --days 7
+/cc-timeline:tune --days 14 --project myapp
+```
+
+它**只提出建議，不會修改**你的設定、agent 定義或 CLAUDE.md。每個建議都附品質護欄，因為時間下降可能是壞事：調整後若回報÷派出、測試失敗率或 API 錯誤上升，就不算改善，只是把成本移到別處。累積足夠的 session（每期至少 5 個）後再跑一次 `/cc-timeline:tune`，確認調整是否站得住腳。
+
 ## 隱私
 
 全部在本機執行，不會送出任何東西。只用到時間戳、事件類型、工具名稱與 id，不會輸出對話內容。Bash 指令文字只用來分類，不會輸出。`--trace` 只輸出事件類型：以 `<` 開頭的 user 訊息只顯示標籤名（例如 `<task-notification`），自由文字的 `reason` 欄位除非是單純識別字，否則會被遮住。

@@ -1,5 +1,11 @@
 {
   "name": "cc-timeline",
-  "description": "Where did the time go in your Claude Code sessions? Time attribution (model, tools, background waits, waiting for you) from local transcripts, with an HTML report.",
-  "author": { "name": "tomclassless" }
+  "description": "Where did the time go in your Claude Code sessions? Time attribution (model, tools, background waits, waiting for you) from local transcripts, with an HTML report, an MCP server and a self-tuning skill.",
+  "author": { "name": "tomclassless" },
+  "mcpServers": {
+    "cc-timeline": {
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/tomclassless/cc-timeline", "cc-timeline", "mcp"]
+    }
+  }
 }

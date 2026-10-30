@@ -16,4 +16,7 @@ First public release, packaged from a personal prototype.
 - Claude Code plugin and marketplace (`/plugin marketplace add tomclassless/cc-timeline`, `/cc-timeline:timeline`).
 - HTML report footer links back to the project.
 - Release workflow: publishing a GitHub release builds and uploads to PyPI via Trusted Publishing; package metadata (classifiers, URLs) for PyPI.
+- MCP server (`cc-timeline mcp`, stdio, standard library only) with five aggregate-only tools: `summary`, `agent_phases`, `session_timeline`, `compare`, `quality_signals`; all accept `redact`. Registered by the plugin (`mcpServers` in `plugin.json`).
+- `cc-timeline compare --before SINCE:UNTIL --after SINCE:UNTIL` and `cc-timeline quality`: the same data as text tables or `--json`, for users without MCP.
+- `/cc-timeline:tune` skill: compares recent and previous periods and proposes (never applies) settings changes, with quality guardrails.
 - English and Traditional Chinese (`--lang zh-TW` or `CC_TIMELINE_LANG`).
