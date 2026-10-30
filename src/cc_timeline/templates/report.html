@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="zh-Hant">
+<html lang="__LANG__">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Claude Code 時間分析</title>
+<title>cc-timeline</title>
 <style>
 :root {
   --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
@@ -19,7 +19,7 @@
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--page); color: var(--ink);
-  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "PingFang TC", "Noto Sans TC", sans-serif;
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "PingFang TC", "Noto Sans TC", "Segoe UI", sans-serif;
   font-variant-numeric: tabular-nums; }
 main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
 h1 { font-size: 22px; margin: 0 0 4px; }
@@ -64,52 +64,52 @@ th.sort:hover { color: var(--ink); }
 </head>
 <body>
 <main>
-  <h1>Claude Code 時間分析</h1>
+  <h1 data-l="app_title"></h1>
   <p class="meta" id="meta"></p>
   <div class="tiles" id="tiles"></div>
 
   <section class="card">
-    <h2>每日時間分配</h2>
-    <p class="sub">各 session 依開始日期歸日；不含「離開」（單一空檔超過門檻）的時間。</p>
+    <h2 data-l="daily_title"></h2>
+    <p class="sub" data-l="daily_sub"></p>
     <div class="legend" id="dailyLegend"></div>
     <div id="daily"></div>
-    <details><summary>表格</summary><div class="scroll" id="dailyTable"></div></details>
+    <details><summary data-l="table"></summary><div class="scroll" id="dailyTable"></div></details>
   </section>
 
   <section class="card">
-    <h2>時間花在哪</h2>
-    <p class="sub">工具：工具真的在執行。背景：主對話閒著，在等 agent、其他 session 或 App。前 15 名。</p>
+    <h2 data-l="items_title"></h2>
+    <p class="sub" data-l="items_sub"></p>
     <div class="legend" id="itemsLegend"></div>
     <div id="items"></div>
-    <details><summary>表格</summary><div class="scroll" id="itemsTable"></div></details>
+    <details><summary data-l="table"></summary><div class="scroll" id="itemsTable"></div></details>
   </section>
 
   <section class="card">
-    <h2>Agent 內部時間</h2>
-    <p class="sub">讀各 subagent 自己的逐字稿；平行執行的 agent 會疊加，所以總和可能大於主對話等待的時間。</p>
+    <h2 data-l="agents_title"></h2>
+    <p class="sub" data-l="agents_sub"></p>
     <div class="legend" id="agentsLegend"></div>
     <div id="agents"></div>
-    <details><summary>表格</summary><div class="scroll" id="agentsTable"></div></details>
+    <details><summary data-l="table"></summary><div class="scroll" id="agentsTable"></div></details>
   </section>
 
   <div class="grid2" style="margin-top:16px">
     <section class="card">
-      <h2>每次平均時長</h2>
-      <p class="sub">依 agent 開始日期；用來看設定調整前後的變化。</p>
+      <h2 data-l="dur_title"></h2>
+      <p class="sub" data-l="dur_sub"></p>
       <div class="legend" id="durLegend"></div>
       <div id="dur"></div>
     </section>
     <section class="card">
-      <h2>思考占比</h2>
-      <p class="sub">agent 內部時間中，模型 thinking 所占的比例。</p>
+      <h2 data-l="think_title"></h2>
+      <p class="sub" data-l="think_sub"></p>
       <div class="legend" id="thinkLegend"></div>
       <div id="think"></div>
     </section>
   </div>
 
   <section class="card">
-    <h2>Sessions</h2>
-    <p class="sub">點欄位標題排序。</p>
+    <h2 data-l="sessions_title"></h2>
+    <p class="sub" data-l="sessions_sub"></p>
     <div class="scroll" id="sessions"></div>
   </section>
 </main>
@@ -118,8 +118,13 @@ th.sort:hover { color: var(--ink); }
 <script id="data" type="application/json">__DATA__</script>
 <script>
 const D = JSON.parse(document.getElementById("data").textContent);
+const L = D.labels;
+const tpl = (k, o = {}) => L[k].replace(/\{(\w+)\}/g, (_, n) => o[n]);
+const G = g => L["g_" + g];
+document.title = L.app_title;
+document.querySelectorAll("[data-l]").forEach(n => n.textContent = L[n.dataset.l]);
 const C = i => `var(--s${i + 1})`;
-const BUCKETS = [["model", "模型生成"], ["tool", "工具執行"], ["bg", "背景／其他來源"], ["user", "等你"]];
+const BUCKETS = [["model", L.b_model], ["tool", L.b_tool], ["bg", L.b_bg], ["user", L.b_user]];
 const NS = "http://www.w3.org/2000/svg";
 
 function fmt(sec) {
@@ -145,7 +150,7 @@ function svg(host, h) {
   const s = el("svg", {viewBox: `0 0 ${w} ${h}`, height: h}, host);
   return [s, w];
 }
-// 只圓資料端的長方形：dir = "top"（直條）或 "right"（橫條）
+// Round only the data end of a bar: dir = "top" (vertical) or "right" (horizontal)
 function bar(parent, x, y, w, h, r, dir, fill) {
   r = Math.max(0, Math.min(r, dir === "top" ? w / 2 : h / 2, dir === "top" ? h : w));
   const d = dir === "top"
@@ -179,20 +184,20 @@ function table(id, head, rows) {
 }
 function empty(id, msg) { document.getElementById(id).innerHTML = `<div class="empty">${msg}</div>`; }
 
-// ── 標題與數字卡 ──
+// -- header and tiles --
 const T = D.totals, busy = sum(BUCKETS.map(([k]) => T[k] || 0));
 document.getElementById("meta").textContent =
-  `${D.project} · 最近 ${D.days} 天 · ${D.sessionCount} 個 session · API 錯誤 ${D.apiErrors} 次 · 產生於 ${D.generated}`;
+  tpl("meta", {project: D.project, days: D.days, n: D.sessionCount, errors: D.apiErrors, generated: D.generated});
 document.getElementById("tiles").innerHTML =
-  `<div class="tile"><div class="label">活躍時間</div><div class="value">${fmt(busy)}</div>
-     <div class="note">另有離開 ${fmt(T.idle || 0)}</div></div>` +
+  `<div class="tile"><div class="label">${esc(L.tile_active)}</div><div class="value">${fmt(busy)}</div>
+     <div class="note">${esc(tpl("tile_idle", {t: fmt(T.idle || 0)}))}</div></div>` +
   BUCKETS.map(([k, n], i) => `<div class="tile"><div class="label"><i class="sw" style="background:${C(i)}"></i>${n}</div>
      <div class="value">${pct(T[k] || 0, busy)}</div><div class="note">${fmt(T[k] || 0)}</div></div>`).join("");
 
-// ── 每日堆疊直條 ──
+// -- daily stacked columns --
 function drawDaily() {
   const host = document.getElementById("daily");
-  if (!D.daily.length) return empty("daily", "沒有資料");
+  if (!D.daily.length) return empty("daily", L.no_data);
   const H = 240, m = {l: 40, r: 8, t: 10, b: 26};
   const [s, W] = svg(host, H);
   const max = niceMax(Math.max(...D.daily.map(d => sum(BUCKETS.map(([k]) => d[k] || 0)))) / 3600);
@@ -212,7 +217,7 @@ function drawDaily() {
       const top = y(acc + v), bottom = y(acc), last = idx === segs.length - 1;
       const h = Math.max(0, bottom - top - (acc > 0 ? 2 : 0));
       const p = bar(s, x, top, bw, h, last ? 4 : 0, "top", C(j));
-      hover(p, `<b>${d.date}</b><br>${BUCKETS[j][1]}：${fmt(d[k])}（${pct(d[k], total)}）<br>當日合計 ${fmt(total)}`);
+      hover(p, `<b>${d.date}</b><br>` + tpl("tip_daily", {bucket: esc(BUCKETS[j][1]), t: fmt(d[k]), p: pct(d[k], total), total: fmt(total)}));
       acc += v;
     });
     if (i % every === 0)
@@ -220,14 +225,14 @@ function drawDaily() {
   });
 }
 legend("dailyLegend", BUCKETS.map(b => b[1]));
-table("dailyTable", ["日期", ...BUCKETS.map(b => b[1]), "合計"],
+table("dailyTable", [L.h_date, ...BUCKETS.map(b => b[1]), L.h_total],
   D.daily.map(d => [d.date, ...BUCKETS.map(([k]) => fmt(d[k] || 0)), fmt(sum(BUCKETS.map(([k]) => d[k] || 0)))]));
 
-// ── 前 15 名橫條 ──
-const KIND = {tool: [1, "工具"], bg: [2, "背景"]};
+// -- top 15 horizontal bars --
+const KIND = {tool: [1, L.k_tool], bg: [2, L.k_bg]};
 function drawItems() {
   const host = document.getElementById("items");
-  if (!D.items.length) return empty("items", "沒有資料");
+  if (!D.items.length) return empty("items", L.no_data);
   const row = 28, H = D.items.length * row + 4;
   const [s, W] = svg(host, H);
   const lw = Math.min(260, W * .38), vw = 64, max = D.items[0].sec;
@@ -237,49 +242,49 @@ function drawItems() {
     const t = el("text", {x: lw - 10, y: yy + 14, "text-anchor": "end", class: "ink"}, s);
     t.textContent = it.name.length > 26 ? it.name.slice(0, 25) + "…" : it.name;
     const p = bar(s, lw, yy + 2, w, 16, 4, "right", C(KIND[it.kind][0]));
-    hover(p, `<b>${esc(it.name)}</b><br>${KIND[it.kind][1]} · ${it.n} 次 · 合計 ${fmt(it.sec)}<br>平均 ${fmt(it.sec / it.n)}`);
+    hover(p, `<b>${esc(it.name)}</b><br>` + tpl("tip_item", {kind: KIND[it.kind][1], n: it.n, t: fmt(it.sec), avg: fmt(it.sec / it.n)}));
     el("text", {x: lw + w + 6, y: yy + 14}, s).textContent = fmt(it.sec);
   });
 }
 document.getElementById("itemsLegend").innerHTML =
-  `<span><i class="sw" style="background:${C(1)}"></i>工具執行</span><span><i class="sw" style="background:${C(2)}"></i>背景／其他來源</span>`;
-table("itemsTable", ["項目", "類型", "次數", "總時間", "平均"],
+  `<span><i class="sw" style="background:${C(1)}"></i>${esc(L.b_tool)}</span><span><i class="sw" style="background:${C(2)}"></i>${esc(L.b_bg)}</span>`;
+table("itemsTable", [L.h_item, L.h_type, L.h_calls, L.h_time, L.h_avg],
   D.items.map(i => [i.name, KIND[i.kind][1], i.n, fmt(i.sec), fmt(i.sec / i.n)]));
 
-// ── Agent 內部 100% 堆疊橫條 ──
+// -- agent internals, 100% stacked bars --
 function drawAgents() {
   const host = document.getElementById("agents");
-  if (!D.agents.length) return empty("agents", "這些 session 沒有 subagent 逐字稿");
+  if (!D.agents.length) return empty("agents", L.no_agent_files);
   const row = 44, H = D.agents.length * row;
   const [s, W] = svg(host, H);
   const lw = Math.min(170, W * .3), rw = 110, bwMax = W - lw - rw;
   D.agents.forEach((a, i) => {
     const yy = i * row + 6, total = sum(Object.values(a.phases));
     el("text", {x: lw - 10, y: yy + 13, "text-anchor": "end", class: "ink"}, s).textContent = a.type;
-    el("text", {x: lw - 10, y: yy + 28, "text-anchor": "end"}, s).textContent = `${a.runs} 次`;
+    el("text", {x: lw - 10, y: yy + 28, "text-anchor": "end"}, s).textContent = tpl("runs", {n: a.runs});
     const segs = D.phaseGroups.map((g, j) => [g, j, a.phases[g] || 0]).filter(([, , v]) => v > 0);
     let x = lw;
     segs.forEach(([g, j, v], idx) => {
       const last = idx === segs.length - 1, w = bwMax * v / total;
       const p = bar(s, x, yy + 4, Math.max(0, w - (last ? 0 : 2)), 20, last ? 4 : 0, "right", C(j));
-      hover(p, `<b>${esc(a.type)}</b> · ${g}<br>${fmt(v)}（${pct(v, total)}）<br>平均每次 ${fmt(v / a.runs)}`);
+      hover(p, `<b>${esc(a.type)}</b> · ${esc(G(g))}<br>` + tpl("tip_agent", {t: fmt(v), p: pct(v, total), avg: fmt(v / a.runs)}));
       x += w;
     });
-    el("text", {x: lw + bwMax + 8, y: yy + 13, class: "ink"}, s).textContent = `平均 ${fmt(total / a.runs)}`;
-    el("text", {x: lw + bwMax + 8, y: yy + 28}, s).textContent = `合計 ${fmt(total)}`;
+    el("text", {x: lw + bwMax + 8, y: yy + 13, class: "ink"}, s).textContent = tpl("avg_x", {t: fmt(total / a.runs)});
+    el("text", {x: lw + bwMax + 8, y: yy + 28}, s).textContent = tpl("total_x", {t: fmt(total)});
   });
 }
-legend("agentsLegend", D.phaseGroups);
-table("agentsTable", ["Agent", "次數", "平均", ...D.phaseGroups],
+legend("agentsLegend", D.phaseGroups.map(G));
+table("agentsTable", [L.h_agent, L.h_runs, L.h_avg, ...D.phaseGroups.map(G)],
   D.agents.map(a => { const t = sum(Object.values(a.phases));
     return [a.type, a.runs, fmt(t / a.runs), ...D.phaseGroups.map(g => `${fmt(a.phases[g] || 0)}（${pct(a.phases[g] || 0, t)}）`)]; }));
 
-// ── 趨勢折線（每張一個 y 軸） ──
+// -- trend lines (one y axis per chart) --
 const TREND_TYPES = D.agents.slice(0, 3).map(a => a.type);
 const dates = [...new Set(D.agentDaily.map(d => d.date))].sort();
 function drawLine(id, value, yfmt) {
   const host = document.getElementById(id);
-  if (!dates.length) return empty(id, "沒有 agent 資料");
+  if (!dates.length) return empty(id, L.no_agent_data);
   const H = 200, m = {l: 44, r: 12, t: 10, b: 26};
   const [s, W] = svg(host, H);
   const series = TREND_TYPES.map(t => dates.map(d => {
@@ -305,16 +310,16 @@ function drawLine(id, value, yfmt) {
       if (!p) return;
       el("circle", {cx: x(i), cy: y(p.v), r: 4, fill: C(j), stroke: "var(--surface)", "stroke-width": 2}, s);
       const hit = el("circle", {cx: x(i), cy: y(p.v), r: 12, fill: "transparent"}, s);
-      hover(hit, `<b>${esc(TREND_TYPES[j])}</b> · ${p.d}<br>${p.r.runs} 次 · 平均 ${fmt(p.r.total / p.r.runs)}<br>思考 ${pct(p.r.think, p.r.total)}`);
+      hover(hit, `<b>${esc(TREND_TYPES[j])}</b> · ${p.d}<br>` + tpl("tip_trend", {n: p.r.runs, avg: fmt(p.r.total / p.r.runs), think: pct(p.r.think, p.r.total)}));
     });
   });
 }
 legend("durLegend", TREND_TYPES);
 legend("thinkLegend", TREND_TYPES);
 
-// ── Session 表（可排序） ──
-const COLS = [["start", "開始", "l"], ["project", "專案", "l"], ["id", "session", "l"], ["wall", "總時長"],
-  ["model", "模型"], ["tool", "工具"], ["bg", "背景"], ["user", "等你"], ["idle", "離開"], ["errors", "API 錯誤"], ["top", "最耗時項目", "l"]];
+// -- sessions table (sortable) --
+const COLS = [["start", L.h_start, "l"], ["project", L.h_project, "l"], ["id", L.h_session, "l"], ["wall", L.h_wall],
+  ["model", L.col_model], ["tool", L.col_tool], ["bg", L.col_bg], ["user", L.col_user], ["idle", L.col_idle], ["errors", L.h_errors], ["top", L.h_top, "l"]];
 let sortKey = "start", sortDir = -1;
 function drawSessions() {
   const rows = [...D.sessions].sort((a, b) => (a[sortKey] > b[sortKey] ? 1 : a[sortKey] < b[sortKey] ? -1 : 0) * sortDir);

@@ -1,0 +1,7 @@
+{"type": "user", "timestamp": "2026-01-01T00:00:14.000Z", "cwd": "/Users/demo/webapp", "message": {"role": "user", "content": "hello"}, "isSidechain": true}
+{"type": "assistant", "timestamp": "2026-01-01T00:00:20.000Z", "cwd": "/Users/demo/webapp", "message": {"id": "m1", "model": "claude-x", "role": "assistant", "content": [{"type": "thinking", "thinking": "..."}]}, "isSidechain": true}
+{"type": "assistant", "timestamp": "2026-01-01T00:00:24.000Z", "cwd": "/Users/demo/webapp", "message": {"id": "m1", "model": "claude-x", "role": "assistant", "content": [{"type": "tool_use", "id": "r1", "name": "Grep", "input": {}}]}, "isSidechain": true}
+{"type": "user", "timestamp": "2026-01-01T00:00:26.000Z", "cwd": "/Users/demo/webapp", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "r1", "content": "ok"}]}, "isSidechain": true}
+{"type": "assistant", "timestamp": "2026-01-01T00:00:30.000Z", "cwd": "/Users/demo/webapp", "message": {"id": "m1", "model": "claude-x", "role": "assistant", "content": [{"type": "tool_use", "id": "e1", "name": "Edit", "input": {}}]}, "isSidechain": true}
+{"type": "user", "timestamp": "2026-01-01T00:00:33.000Z", "cwd": "/Users/demo/webapp", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "e1", "content": "ok"}]}, "isSidechain": true}
+{"type": "assistant", "timestamp": "2026-01-01T00:01:00.000Z", "cwd": "/Users/demo/webapp", "message": {"id": "m1", "model": "claude-x", "role": "assistant", "content": [{"type": "text", "text": "ok"}]}, "isSidechain": true}

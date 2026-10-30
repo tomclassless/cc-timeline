@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cc-timeline"
+version = "0.1.0"
+description = "Where did the time go in your Claude Code sessions? Time attribution from local transcripts."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+authors = [{ name = "Masaka" }]
+keywords = ["claude-code", "transcript", "profiling", "timeline"]
+classifiers = [
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Environment :: Console",
+]
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[project.scripts]
+cc-timeline = "cc_timeline.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cc_timeline"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
