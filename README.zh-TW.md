@@ -1,38 +1,63 @@
 # cc-timeline
 
+[![CI](https://github.com/tomclassless/cc-timeline/actions/workflows/ci.yml/badge.svg)](https://github.com/tomclassless/cc-timeline/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/cc-timeline)](https://pypi.org/project/cc-timeline/)
+[![Python](https://img.shields.io/pypi/pyversions/cc-timeline)](https://pypi.org/project/cc-timeline/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
 [English](README.md)
 
 你的 Claude Code session 時間花到哪去了？`cc-timeline` 讀 Claude Code 本來就存在你電腦上的逐字稿，把 session 的每一秒歸到 **模型**、**工具**、**背景等待**（subagent、其他 session、App）、**等你**或**離開**。也能往 subagent 裡面看，各類 agent 的時間花在思考、寫程式碼、讀取、測試還是輪詢。
+
+**我自己一週的發現。** 在我自己一週的工作（40 個 session）裡，Claude Code 主 session 有 **51%** 的活躍時間在等 subagent。reviewer 花的時間跟寫程式的 executor 差不多（各約 8 小時），而 executor 內部只有 12% 的時間在寫程式碼：31% 在思考、19% 在跑測試、13% 在 sleep 輪詢迴圈。
+
+*以下截圖使用合成的示範資料。*
 
 ![Overview: daily allocation and where the time goes](docs/report-overview.png)
 
 ![Session timeline: main thread and parallel subagents](docs/report-timeline.png)
 
-## 跟既有工具有什麼不同
+## 相關工具
 
-- **ccusage** 只算 token 與花費，不算時間。
-- **claude-devtools**、**claude-session-dashboard** 能視覺化 subagent，但沒有時間歸因。
-- **官方 OpenTelemetry** 有 duration，但要事先開啟、不能回溯，也不拆等待。
-- **yonk-labs/claude-session-analyzer** 有逐回合拆分，但沒有 subagent，也不處理 `turnOrigin`。
+- [ccusage](https://github.com/ryoppippi/ccusage)：token 用量與費用報表。
+- [claude-devtools](https://github.com/matt1398/claude-devtools)：session 重建與 context 拆解。
+- [claude-session-dashboard](https://github.com/dlupiak/claude-session-dashboard)：儀表板，含 agent 派工甘特圖。
+- [claude-code-log](https://github.com/daaain/claude-code-log) 與 [claude-code-transcripts](https://github.com/simonw/claude-code-transcripts)：把逐字稿轉成 HTML。
+- [sniffly](https://github.com/chiphuyen/sniffly)：使用統計與錯誤分析。
+- [claude-session-analyzer](https://github.com/yonk-labs/claude-session-analyzer)：逐回合時間與 skill 分析。
+- [官方 OpenTelemetry monitoring](https://code.claude.com/docs/en/monitoring-usage)：即時匯出指標與事件，需事先啟用。
 
-`cc-timeline` 可以回溯分析既有逐字稿，把「模型在工作」和「什麼都沒發生、在等某個東西」分開，並推算背景等待屬於哪一種 agent。
+`cc-timeline` 只專注一個問題：回溯分析磁碟上既有的逐字稿，把「模型在工作」和「什麼都沒發生、在等某個東西」分開，並推算背景等待屬於哪一種 agent。
 
 ## 安裝
 
 需要 Python 3.9 以上，只用標準函式庫。
 
 ```bash
-# 不安裝，直接跑
+# 不安裝，直接跑（PyPI 發佈後可用）
+uvx cc-timeline
+
+# 或從 git repo 執行（現在就能用）
 uvx --from git+https://github.com/tomclassless/cc-timeline cc-timeline
 
 # 安裝成工具
-uv tool install git+https://github.com/tomclassless/cc-timeline
-
-# 或用 pip
-pip install git+https://github.com/tomclassless/cc-timeline
+uv tool install git+https://github.com/tomclassless/cc-timeline   # 或：uv tool install cc-timeline
+pip install git+https://github.com/tomclassless/cc-timeline       # 或：pip install cc-timeline
 ```
 
 也可以用 `python -m cc_timeline`。
+
+### 在 Claude Code 裡使用（plugin）
+
+這個 repo 同時是 Claude Code 的 plugin marketplace：
+
+```
+/plugin marketplace add tomclassless/cc-timeline
+/plugin install cc-timeline@cc-timeline
+/cc-timeline:timeline --days 14
+```
+
+`timeline` skill 會帶著你給的參數執行 `cc-timeline --html --open`，並摘要結果。目前它透過 `uvx --from git+https://github.com/tomclassless/cc-timeline` 從 git repo 執行；套件上 PyPI 之後可改成單純的 `uvx cc-timeline`。
 
 ## 用法
 

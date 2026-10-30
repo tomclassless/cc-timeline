@@ -1,38 +1,63 @@
 # cc-timeline
 
+[![CI](https://github.com/tomclassless/cc-timeline/actions/workflows/ci.yml/badge.svg)](https://github.com/tomclassless/cc-timeline/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/cc-timeline)](https://pypi.org/project/cc-timeline/)
+[![Python](https://img.shields.io/pypi/pyversions/cc-timeline)](https://pypi.org/project/cc-timeline/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
 [繁體中文](README.zh-TW.md)
 
 Where did the time go in your Claude Code sessions? `cc-timeline` reads the transcripts Claude Code already keeps on your machine and attributes every second of a session to **the model**, **tools**, **background waits** (subagents, other sessions, the app), **waiting for you**, or **away**. It can also look inside subagents and show how each agent type splits its time between thinking, writing code, reading, testing and polling.
+
+**What it found in my own week.** In one week of my own work (40 sessions), the main Claude Code session spent **51%** of its active time waiting on subagents. Reviewers took about as long as the executors writing the code (~8h each), and inside the executors only 12% of the time was spent writing code: 31% thinking, 19% running tests, 13% in sleep-polling loops.
+
+*The screenshots below use synthetic demo data.*
 
 ![Overview: daily allocation and where the time goes](docs/report-overview.png)
 
 ![Session timeline: main thread and parallel subagents](docs/report-timeline.png)
 
-## How is this different?
+## Related tools
 
-- **ccusage** counts tokens and cost, not time.
-- **claude-devtools** and **claude-session-dashboard** visualize subagents, but do not attribute time to causes.
-- **Official OpenTelemetry** exports durations, but you must enable it beforehand, it cannot be applied retroactively, and it does not split out waiting.
-- **yonk-labs/claude-session-analyzer** has per-turn breakdowns, but no subagent view and no `turnOrigin` handling.
+- [ccusage](https://github.com/ryoppippi/ccusage): token usage and cost reports.
+- [claude-devtools](https://github.com/matt1398/claude-devtools): session reconstruction and context breakdown.
+- [claude-session-dashboard](https://github.com/dlupiak/claude-session-dashboard): a dashboard with an agent dispatch Gantt chart.
+- [claude-code-log](https://github.com/daaain/claude-code-log) and [claude-code-transcripts](https://github.com/simonw/claude-code-transcripts): convert transcripts to HTML.
+- [sniffly](https://github.com/chiphuyen/sniffly): usage statistics and error analysis.
+- [claude-session-analyzer](https://github.com/yonk-labs/claude-session-analyzer): per-turn timing and skill analysis.
+- [Official OpenTelemetry monitoring](https://code.claude.com/docs/en/monitoring-usage): metrics and events exported live, enabled beforehand.
 
-`cc-timeline` works retroactively on existing transcripts, separates "the model is working" from "nothing is happening, we are waiting for X", and works out which agent type a background wait belongs to.
+`cc-timeline` focuses on one question: it works retroactively on transcripts already on disk, separates "the model is working" from "nothing is happening, we are waiting for X", and works out which agent type a background wait belongs to.
 
 ## Install
 
 Python 3.9+, standard library only.
 
 ```bash
-# run without installing
+# run without installing (once the PyPI release is out)
+uvx cc-timeline
+
+# or from the git repository (works today)
 uvx --from git+https://github.com/tomclassless/cc-timeline cc-timeline
 
-# or install as a tool
-uv tool install git+https://github.com/tomclassless/cc-timeline
-
-# or with pip
-pip install git+https://github.com/tomclassless/cc-timeline
+# install as a tool
+uv tool install git+https://github.com/tomclassless/cc-timeline   # or: uv tool install cc-timeline
+pip install git+https://github.com/tomclassless/cc-timeline       # or: pip install cc-timeline
 ```
 
 `python -m cc_timeline` works too.
+
+### Use inside Claude Code (plugin)
+
+This repository is also a Claude Code plugin marketplace:
+
+```
+/plugin marketplace add tomclassless/cc-timeline
+/plugin install cc-timeline@cc-timeline
+/cc-timeline:timeline --days 14
+```
+
+The `timeline` skill runs `cc-timeline --html --open` with your arguments and summarizes the result. It currently runs from the git repository via `uvx --from git+https://github.com/tomclassless/cc-timeline`; once the package is on PyPI this can be switched to plain `uvx cc-timeline`.
 
 ## Usage
 
