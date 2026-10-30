@@ -37,17 +37,34 @@ pip install git+https://github.com/tomclassless/cc-timeline
 ```bash
 cc-timeline                                  # last 7 days, one line per session
 cc-timeline --days 30 --project myapp        # filter by project folder name
+cc-timeline --since 2026-03-01 --until 2026-03-31   # by start date (local time, inclusive)
+cc-timeline --by week                        # one summary row per day / week / project / session
+cc-timeline --csv sessions.csv               # sessions as CSV (with --by: the summary rows)
 cc-timeline --session 3f2a                   # one session: breakdown + slowest steps
 cc-timeline --session 3f2a --trace 3         # event types around the 3 slowest steps (no content)
 cc-timeline --agents                         # subagent internals by agent type
 cc-timeline --html                           # ./cc-timeline-report.html
 cc-timeline --html out.html --open          # write and open in a browser
 cc-timeline --json | jq .totals              # machine-readable report data
+cc-timeline --html --timeline-sessions 5     # gantt data for the 5 busiest sessions (default 20, 0 = off)
 cc-timeline --html --redact                  # safe to screenshot: anonymized names and ids
 cc-timeline --lang zh-TW                     # or CC_TIMELINE_LANG=zh-TW
 ```
 
 Transcripts are read from `$CLAUDE_CONFIG_DIR/projects`, or `~/.claude/projects` if unset (override with `--root`). Other options: `--idle-cap MINUTES` (default 30), `--top N` (default 10).
+
+Date filters: `--since` / `--until` (`YYYY-MM-DD`, local time zone, `--until` includes that day) select sessions by their **first timestamp**; file modification time is only used to skip old files quickly. `--days N` is the same as `--since` N days ago and is ignored when `--since` is given. `--session` ignores date filters.
+
+`--by day|week|project|session` prints one row per group: number of sessions, active time (model + tool + background), time and share for model / tool / background / waiting for you, and away. Weeks are ISO weeks (`2026-W44`). `--csv PATH` writes the per-session table (columns `start, project, session, wall, model, tool, bg, user, idle, errors, top`; seconds are numbers), or the group rows when combined with `--by`.
+
+## Session timeline (HTML)
+
+The report has a **Session timeline** card: a gantt chart for one session at a time (pick it from the drop-down; it starts on the session with the highest share of background waiting). One row is the main thread, followed by one row per subagent, so you can see what the main thread waited on and whether agents ran in parallel.
+
+- Colors follow the time categories: model = blue, tool = orange, test/build = pink, polling = purple, waiting for you = yellow, waiting for background = hatched gray. Main-thread and agent categories share colors where they mean the same thing (an agent's thinking / writing code / other generation are "model"; reading / scripts / git / other tools are "tool").
+- Away stretches (longer than `--idle-cap`) during which no agent was working are collapsed to a fixed-width break labelled like `⋯ 3h12m`.
+- With more than 15 subagents, agents of the same type that did not overlap share a row.
+- Only the `--timeline-sessions N` sessions with the most active time are embedded (default 20, `0` = no timeline card) to keep the report small. A "Table" section lists each agent's type, start, end and duration.
 
 ## How time is attributed
 
@@ -69,6 +86,10 @@ Details:
 - Subagent transcripts (`<session>/subagents/agent-*.jsonl`) are classified by the next block: before a `thinking` block is thinking, before an Edit/Write call is writing code, other assistant output is "other generation"; tool time is split into reading, testing/build, polling, scripts, git, install, other. A new non-tool-result user message restarts the clock.
 - Bash commands are bucketed heuristically: `sleep` is polling; test/build/lint words are testing; `npm install` and friends are install; otherwise the first command decides (git, read-like commands, scripts, other).
 
+## Format-change warning
+
+Claude Code's transcript format is undocumented (`turnOrigin`, `queue-operation`, `api-request`, ... are observed, not specified). While scanning, `cc-timeline` counts entry `type`s, `turnOrigin` / `origin.kind` values and the Claude Code `version` of each entry. If it sees a type or origin it does not know, it prints one warning line to stderr (and shows it in the HTML footer): the Claude Code format has probably changed, so numbers may be wrong. Please open an issue with the names shown. `--json` has a `format` block (`types`, `origins`, `versions`, `unknown`), and the HTML footer shows the range of Claude Code versions seen. Unknown origins are still counted as background, labelled "Other source (x)".
+
 ## Limitations
 
 - The transcript format is not a public API and may change; some attribution relies on fields observed in practice.
@@ -79,7 +100,16 @@ Details:
 
 ## Privacy
 
-Everything runs locally; nothing is sent anywhere. Only timestamps, event types, tool names and ids are used. Conversation content is never printed or written to reports. Bash command text is used only to classify the command and is not output. Use `--redact` to replace project names and session ids before sharing a screenshot, report or JSON.
+Everything runs locally; nothing is sent anywhere. Only timestamps, event types, tool names and ids are used. Conversation content is never printed or written to reports. Bash command text is used only to classify the command and is not output. Trace output (`--trace`) shows event types only: for user messages that start with `<` just the tag name (for example `<task-notification`), and the free-text `reason` field is masked unless it is a plain identifier.
+
+Use `--redact` before sharing a screenshot, report, JSON or CSV. It replaces:
+
+- project names with `project-1`, `project-2`, ...
+- session ids with a short hash
+- custom agent types (anything except `general-purpose`, `Explore`, `Plan`, `statusline-setup`, `claude-code-guide`) with `agent-1`, `agent-2`, ...
+- MCP server names with `mcp-1`, `mcp-2`, ... (the tool name after the server is kept)
+
+It applies to the table, `--by`, `--agents`, `--trace`, HTML, JSON and CSV. It does **not** hide built-in agent types, ordinary tool names (`Read`, `Bash`, ...), MCP tool names, timestamps and durations, API error counts, Claude Code versions, or the folder given with `--root` if you print it yourself.
 
 ## License
 
